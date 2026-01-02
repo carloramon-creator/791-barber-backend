@@ -60,46 +60,31 @@ export async function getCurrentUserAndTenant() {
 
         console.log('[BACKEND] User autenticado (final):', userAuthId);
 
-        // Buscar dados do usuário e tenant
+        // Buscar dados do usuário (role e tenant_id)
         const { data: userData, error: userError } = await supabaseAdmin
             .from('users')
-            .select(`
-                role,
-                tenant_id,
-                tenants (
-                    id,
-                    plan,
-                    name,
-                    cnpj,
-                    phone,
-                    address,
-                    logo_url,
-                    subscription_status,
-                    subscription_current_period_end
-                )
-            `)
+            .select('*')
             .eq('id', userAuthId)
             .single();
 
-        if (userError) {
-            console.error('[BACKEND] User profile lookup failed:', userError.message);
-            throw new Error('Perfil de usuário não encontrado: ' + userError.message);
+        if (userError || !userData) {
+            console.error('[BACKEND] User profile lookup failed:', userError?.message);
+            throw new Error('Perfil de usuário não encontrado');
         }
 
-        if (!userData) {
-            console.error('[BACKEND] No user data returned');
-            throw new Error('Dados do usuário não retornados');
-        }
+        // Buscar dados da barbearia (todos os campos com *)
+        const { data: tenant, error: tenantError } = await supabaseAdmin
+            .from('tenants')
+            .select('*')
+            .eq('id', userData.tenant_id)
+            .single();
 
-        const tenant = (userData as any).tenants;
-        if (!tenant) {
-            console.error('[BACKEND] Tenant not found');
+        if (tenantError || !tenant) {
+            console.error('[BACKEND] Tenant not found:', tenantError?.message);
             throw new Error('Barbearia não vinculada ao seu usuário');
         }
 
         console.log('[BACKEND] Tenant found:', tenant.name, 'Plan:', tenant.plan);
-        // Retornar user objeto completo se possível, mas aqui temos pelo menos o ID. 
-        // Pra manter compatibilidade, montamos um objeto user simples com id
         const user = { id: userAuthId };
 
         return { user, tenant, role: userData.role };
@@ -124,7 +109,7 @@ export function checkRolePermission(role: string, action: 'view_finance' | 'mana
     const permissions: Record<string, string[]> = {
         owner: ['view_finance', 'manage_users', 'manage_plan', 'manage_all_queues', 'edit_barbershop'],
         staff: ['manage_all_queues'],
-        barber: [] // Barbeiros só vêm a própria fila, nada administrativo por agora
+        barber: []
     };
 
     const allowedActions = permissions[role] || [];
@@ -142,6 +127,7 @@ export function getStatusColor(status: string) {
         default: return 'gray';
     }
 }
+
 export function addCorsHeaders(req: Request, response: NextResponse) {
     const origin = req.headers.get('origin');
 
