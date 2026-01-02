@@ -1,0 +1,61 @@
+import { NextResponse } from 'next/server';
+import { supabase } from '@/app/lib/supabase';
+import { getCurrentUserAndTenant } from '@/app/lib/utils';
+
+/**
+ * Finaliza o atendimento de um cliente.
+ */
+export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+    const { id: queueId } = await params;
+    try {
+        const { tenant, role } = await getCurrentUserAndTenant();
+        if (role !== 'owner' && role !== 'barber') {
+            return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+        }
+
+        const client = await supabase();
+
+        // 1. Buscar a entrada da fila para saber quem é o barbeiro
+        const { data: queueEntry, error: fetchError } = await client
+            .from('client_queue')
+            .select('barber_id')
+            .eq('id', queueId)
+            .single();
+
+        if (fetchError || !queueEntry) throw new Error('Atendimento não encontrado');
+
+        // 2. Finalizar o atendimento
+        const { error: finishError } = await client
+            .from('client_queue')
+            .update({
+                status: 'finished',
+                finished_at: new Date().toISOString()
+            })
+            .eq('id', queueId);
+
+        if (finishError) throw finishError;
+
+        // 3. Verificar se ainda há pessoas na fila do barbeiro
+        const { count } = await client
+            .from('client_queue')
+            .select('*', { count: 'exact', head: true })
+            .eq('barber_id', queueEntry.barber_id)
+            .eq('status', 'waiting');
+
+        // Se não houver ninguém esperando, barbeiro fica available
+        if (count === 0) {
+            await client.from('barbers').update({ status: 'available' }).eq('id', queueEntry.barber_id);
+        }
+
+        // 4. Retornar se o plano permite venda
+        const canCreateSale = tenant.plan === 'intermediate' || tenant.plan === 'complete';
+
+        return NextResponse.json({
+            message: 'Atendimento finalizado',
+            canCreateSale,
+            queueId
+        });
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
