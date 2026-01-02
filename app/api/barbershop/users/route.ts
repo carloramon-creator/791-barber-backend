@@ -10,7 +10,7 @@ export async function GET(req: Request) {
 
     const { data: users, error } = await supabaseAdmin
       .from('users')
-      .select('id, name, email, role, phone, cpf, cep, street, number, complement, neighborhood, city, state, created_at')
+      .select('id, name, email, role, phone, cpf, cep, street, number, complement, neighborhood, city, state, avg_service_time, commission_type, commission_value, created_at')
       .eq('tenant_id', tenant.id)
       .order('created_at', { ascending: false });
 
@@ -80,6 +80,9 @@ export async function POST(req: Request) {
       neighborhood,
       city,
       state,
+      avg_service_time,
+      commission_type,
+      commission_value,
       generateInvite = false
     } = body;
 
@@ -207,7 +210,10 @@ export async function POST(req: Request) {
       complement,
       neighborhood,
       city,
-      state
+      state,
+      avg_service_time: avg_service_time || 30,
+      commission_type: commission_type || 'percentage',
+      commission_value: commission_value || 50
     };
 
     let { data: newUser, error: upsertError } = await supabaseAdmin
