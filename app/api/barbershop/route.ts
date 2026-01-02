@@ -47,7 +47,7 @@ export async function PUT(req: Request) {
         // Remove undefined values
         Object.keys(updates).forEach(key => (updates as any)[key] === undefined && delete (updates as any)[key]);
 
-        console.log(`[BACKEND] Updating barbershop ${tenant.id}:`, updates);
+        console.log(`[BACKEND] Updating barbershop ${tenant.id}. Data:`, JSON.stringify(updates, null, 2));
 
         const { data, error } = await supabaseAdmin
             .from('tenants')
@@ -60,6 +60,8 @@ export async function PUT(req: Request) {
             console.error(`[BACKEND] Error updating barbershop ${tenant.id}:`, error);
             throw error;
         }
+
+        console.log(`[BACKEND] Update successful for ${tenant.id}`);
         return NextResponse.json(data);
     } catch (error: any) {
         console.error('[BACKEND] Error in PUT barbershop:', error.message);
