@@ -110,9 +110,26 @@ export async function getCurrentUserAndTenant() {
 }
 
 export function assertPlanAtLeast(currentPlan: Plan, requiredPlan: Plan) {
-    const order: Plan[] = ['basic', 'intermediate', 'complete'];
+    const order: Plan[] = ['trial', 'basic', 'complete', 'premium'];
+
+    // Trial has access to everything for testing
+    if (currentPlan === 'trial') return;
+
     if (order.indexOf(currentPlan) < order.indexOf(requiredPlan)) {
-        throw new Error(`Seu plano atual (${currentPlan}) não permite esta funcionalidade (${requiredPlan}).`);
+        throw new Error(`Seu plano atual (${currentPlan}) não permite esta funcionalidade. Faça upgrade para o plano ${requiredPlan}.`);
+    }
+}
+
+export function checkRolePermission(role: string, action: 'view_finance' | 'manage_users' | 'manage_plan' | 'manage_all_queues' | 'edit_barbershop') {
+    const permissions: Record<string, string[]> = {
+        owner: ['view_finance', 'manage_users', 'manage_plan', 'manage_all_queues', 'edit_barbershop'],
+        staff: ['manage_all_queues'],
+        barber: [] // Barbeiros só vêm a própria fila, nada administrativo por agora
+    };
+
+    const allowedActions = permissions[role] || [];
+    if (!allowedActions.includes(action)) {
+        throw new Error('Você não tem permissão para realizar esta ação.');
     }
 }
 

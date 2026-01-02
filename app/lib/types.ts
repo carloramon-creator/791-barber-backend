@@ -1,4 +1,4 @@
-export type Plan = 'basic' | 'intermediate' | 'complete';
+export type Plan = 'basic' | 'complete' | 'premium' | 'trial';
 export type UserRole = 'owner' | 'barber' | 'client' | 'staff';
 export type BarberStatus = 'available' | 'busy';
 export type QueueStatus = 'waiting' | 'attending' | 'finished' | 'cancelled';

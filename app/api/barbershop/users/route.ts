@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
-import { getCurrentUserAndTenant } from '@/app/lib/utils';
+import { getCurrentUserAndTenant, checkRolePermission } from '@/app/lib/utils';
 import { UserRole } from '@/app/lib/types';
 
 export async function GET(req: Request) {
   try {
     const { tenant, role } = await getCurrentUserAndTenant();
-    // Allow owners and staff (maybe?) to see users. Sticking to owner for now for management.
-    if (role !== 'owner') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+    checkRolePermission(role, 'manage_users');
 
     const { data: users, error } = await supabaseAdmin
       .from('users')
@@ -38,21 +37,31 @@ export async function POST(req: Request) {
       const { tenant, role } = await getCurrentUserAndTenant();
       tenantId = tenant.id;
       currentUserRole = role;
+      checkRolePermission(role, 'manage_users');
+
+      // CHECK PLAN LIMITS
+      if (tenant.plan !== 'premium' && tenant.plan !== 'trial') {
+        const { count } = await supabaseAdmin
+          .from('users')
+          .select('*', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId)
+          .neq('role', 'client');
+
+        const maxUsers = tenant.plan === 'basic' ? 3 : 10;
+        if ((count || 0) >= maxUsers) {
+          return NextResponse.json({
+            error: `Seu plano atual (${tenant.plan}) permite no máximo ${maxUsers} colaboradores. Faça upgrade para o plano Premium para usuários ilimitados.`
+          }, { status: 403 });
+        }
+      }
+
       console.log('[POST USER] Auth check passed via Session', { tenantId, role });
-    } catch (e) {
-      // Se falhar a sessão, mas tivermos tenantId na URL e for um contexto seguro (ex: admin chamando), permitimos?
-      // Por segurança, vamos exigir autenticação de sessão MAS se o usuário pediu pra usar tenant_id da URL, checar se bate.
+    } catch (e: any) {
       if (tenantIdParam) {
-        console.log('[POST USER] Session auth failed but tenant_id param provided. Assuming auth middleware handled security or proceeding with caution.');
         tenantId = tenantIdParam;
       } else {
-        throw e; // Lança erro de auth se não tiver tenant
+        return NextResponse.json({ error: e.message }, { status: 401 });
       }
-    }
-
-    if (currentUserRole !== 'owner') {
-      console.warn('[POST USER] Access denied. Role:', currentUserRole);
-      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
     }
 
     const body = await req.json();
