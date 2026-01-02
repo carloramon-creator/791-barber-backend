@@ -126,19 +126,17 @@ export function getStatusColor(status: string) {
     }
 }
 export function addCorsHeaders(req: Request, response: NextResponse) {
-    const allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:3003',
-        'https://791barber.com',
-        'https://www.791barber.com'
-    ];
-
     const origin = req.headers.get('origin');
-    if (origin && allowedOrigins.includes(origin)) {
-        response.headers.set('Access-Control-Allow-Origin', origin);
+
+    const isAllowed = origin && (
+        origin.endsWith('791barber.com') ||
+        origin.endsWith('vercel.app') ||
+        origin.startsWith('http://localhost')
+    );
+
+    if (isAllowed) {
+        response.headers.set('Access-Control-Allow-Origin', origin!);
     } else {
-        // Fallback para dev local mais flexível se origin for nulo (ex: server-side tests)
         response.headers.set('Access-Control-Allow-Origin', 'https://791barber.com');
     }
 

@@ -7,9 +7,18 @@ export async function middleware(request: NextRequest) {
     // Configuração de CORS para a API
     if (request.nextUrl.pathname.startsWith('/api')) {
         const origin = request.headers.get('origin')
-        // Permitir qualquer origem em desenvolvimento para testar no celular
-        if (origin) {
-            response.headers.set('Access-Control-Allow-Origin', origin);
+
+        const isAllowed = origin && (
+            origin.endsWith('791barber.com') ||
+            origin.endsWith('vercel.app') ||
+            origin.startsWith('http://localhost')
+        );
+
+        if (isAllowed) {
+            response.headers.set('Access-Control-Allow-Origin', origin!);
+        } else {
+            // Fallback para o domínio oficial
+            response.headers.set('Access-Control-Allow-Origin', 'https://791barber.com');
         }
 
         response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')

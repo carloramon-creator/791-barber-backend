@@ -17,9 +17,9 @@ export const stripe = new Stripe(stripeSecretKey, {
 // Mapeamento de planos para Price IDs do Stripe
 // IMPORTANTE: Substitua pelos IDs reais após criar os produtos no Stripe Dashboard
 export const STRIPE_PRICE_IDS = {
-    basic: process.env.STRIPE_PRICE_BASIC || 'price_basic_placeholder',
-    complete: process.env.STRIPE_PRICE_COMPLETE || 'price_complete_placeholder',
-    premium: process.env.STRIPE_PRICE_PREMIUM || 'price_premium_placeholder',
+    basic: process.env.STRIPE_PRICE_BASIC || 'price_1SlEJ2LzRSgzMHRZERmJwYgH',
+    complete: process.env.STRIPE_PRICE_COMPLETE || 'price_1SlEJbLzRSgzMHRZAleKdO0C',
+    premium: process.env.STRIPE_PRICE_PREMIUM || 'price_1SlEK9LzRSgzMHRZuw1ZcbwS',
 } as const;
 
 export type StripePlan = keyof typeof STRIPE_PRICE_IDS;
