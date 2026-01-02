@@ -10,7 +10,7 @@ export async function GET(req: Request) {
 
     const { data: users, error } = await supabaseAdmin
       .from('users')
-      .select('id, name, email, role, created_at')
+      .select('id, name, email, role, phone, cpf, cep, street, number, complement, neighborhood, city, state, created_at')
       .eq('tenant_id', tenant.id)
       .order('created_at', { ascending: false });
 
@@ -66,7 +66,21 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     console.log('[POST USER] Body received', body);
-    const { email, name, role: requestRole } = body;
+    const {
+      email,
+      name,
+      role: requestRole,
+      phone,
+      cpf,
+      cep,
+      street,
+      number,
+      complement,
+      neighborhood,
+      city,
+      state,
+      generateInvite = false
+    } = body;
 
     if (!email || !requestRole) {
       return NextResponse.json({ error: 'Email e Função são obrigatórios' }, { status: 400 });
@@ -147,15 +161,26 @@ export async function POST(req: Request) {
     console.log('[POST USER] Upserting to public.users:', { userId, tenantId, email, name, role: dbRole });
 
     // Tentar primeiro com o role solicitado
+    const userPayload = {
+      id: userId,
+      tenant_id: tenantId,
+      email: email,
+      name: name || email.split('@')[0],
+      role: dbRole as UserRole,
+      phone,
+      cpf,
+      cep,
+      street,
+      number,
+      complement,
+      neighborhood,
+      city,
+      state
+    };
+
     let { data: newUser, error: upsertError } = await supabaseAdmin
       .from('users')
-      .upsert({
-        id: userId,
-        tenant_id: tenantId,
-        email: email,
-        name: name || email.split('@')[0],
-        role: dbRole as UserRole
-      })
+      .upsert(userPayload)
       .select()
       .single();
 
@@ -165,10 +190,7 @@ export async function POST(req: Request) {
       const { data: retryUser, error: retryError } = await supabaseAdmin
         .from('users')
         .upsert({
-          id: userId,
-          tenant_id: tenantId,
-          email: email,
-          name: name || email.split('@')[0],
+          ...userPayload,
           role: 'barber' // Fallback
         })
         .select()
@@ -181,7 +203,26 @@ export async function POST(req: Request) {
 
     if (upsertError) throw upsertError;
 
-    return NextResponse.json(newUser);
+    // 3. Generate Invite Link if requested
+    let inviteLink = null;
+    if (generateInvite) {
+      console.log('[POST USER] Generating invite link for:', email);
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'invite',
+        email: email,
+        options: {
+          redirectTo: `${process.env.NEXT_PUBLIC_OWNER_URL || 'https://791barber.com'}/login`
+        }
+      });
+
+      if (linkError) {
+        console.error('[POST USER] Error generating link:', linkError.message);
+      } else {
+        inviteLink = linkData.properties?.action_link;
+      }
+    }
+
+    return NextResponse.json({ ...newUser, inviteLink });
 
   } catch (error: any) {
     console.error('[BACKEND] Error in POST user:', error.message);
