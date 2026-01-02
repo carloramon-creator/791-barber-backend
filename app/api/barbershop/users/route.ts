@@ -137,7 +137,7 @@ export async function POST(req: Request) {
     // Check if user already exists in public.users for this tenant
     const { data: existingPublicUser, error: publicUserError } = await supabaseAdmin
       .from('users')
-      .select('id, tenant_id')
+      .select('id, name, tenant_id')
       .eq('email', email)
       .single();
 
@@ -149,12 +149,11 @@ export async function POST(req: Request) {
     if (existingPublicUser) {
       console.log('[POST USER] User found in public.users:', existingPublicUser.id);
       if (existingPublicUser.tenant_id !== tenantId) {
-        return NextResponse.json({ error: 'Usuário já pertence a outra barbearia.' }, { status: 400 });
+        return NextResponse.json({
+          error: `Este e-mail (${email}) pertence ao usuário "${existingPublicUser.name}" de outra barbearia. Não é permitido duplicidade de e-mail no sistema.`
+        }, { status: 400 });
       }
-      // User exists in THIS tenant.
-      // User requested to restrict duplicates by email.
-      return NextResponse.json({ error: 'Usuário já cadastrado nesta barbearia.' }, { status: 400 });
-      // userId = existingPublicUser.id; // Removed upsert logic for existing users
+      return NextResponse.json({ error: `O usuário "${existingPublicUser.name}" já está cadastrado nesta barbearia.` }, { status: 400 });
     }
 
     // 2. Insert/Update public.users
