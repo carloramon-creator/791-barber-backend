@@ -4,19 +4,10 @@ import { getCurrentUserAndTenant } from '@/app/lib/utils';
 
 export async function GET(req: Request) {
     try {
-        const { tenant, role } = await getCurrentUserAndTenant();
-        // Allow barbears and owners to see the barbershop info
-        if (!['owner', 'barber'].includes(role)) {
-            // Depending on requirements client might need this too, sticking to owner/barber for now as "config"
-            // Actually, for branding, everyone needs it. But this endpoint is for "config page".
-            // The prompt says: "Carregar os dados atuais da barbearia do owner logado (via GET /api/barbershop)"
-        }
-
-        // We can just return the tenant object we already fetched with getCurrentUserAndTenant
-        // ensuring it has the new fields
+        const { tenant } = await getCurrentUserAndTenant();
         return NextResponse.json(tenant);
     } catch (error: any) {
-        console.error('[BACKEND] Error in GET barbershop:', error.message);
+        console.error('[BARBERSHOP GET] Error:', error.message);
         return NextResponse.json({ error: error.message }, { status: 400 });
     }
 }
@@ -27,27 +18,27 @@ export async function PUT(req: Request) {
         if (role !== 'owner') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
 
         const body = await req.json();
+        console.log('[BARBERSHOP PUT] Payload received:', JSON.stringify(body, null, 2));
 
-        // Filter allowed fields to update
+        // Mapeamento explícito para garantir que salve independente do nome enviado (tradução)
         const updates = {
-            name: body.name,
+            name: body.name || body.nome,
             cnpj: body.cnpj,
-            phone: body.phone,
-            address: body.address, // Manter por compatibilidade ou remover se quiser forçar novo formato
+            phone: body.phone || body.telefone || body.whatsapp,
             cep: body.cep,
-            street: body.street,
-            number: body.number,
-            complement: body.complement,
-            neighborhood: body.neighborhood,
-            city: body.city,
-            state: body.state,
+            street: body.street || body.logradouro || body.rua || body.address,
+            number: body.number || body.numero,
+            complement: body.complement || body.complemento,
+            neighborhood: body.neighborhood || body.bairro,
+            city: body.city || body.cidade,
+            state: body.state || body.estado || body.uf,
             logo_url: body.logo_url
         };
 
-        // Remove undefined values
+        // Limpeza de campos vazios ou undefined
         Object.keys(updates).forEach(key => (updates as any)[key] === undefined && delete (updates as any)[key]);
 
-        console.log(`[BACKEND] Updating barbershop ${tenant.id}. Data:`, JSON.stringify(updates, null, 2));
+        console.log('[BARBERSHOP PUT] Final updates to DB:', JSON.stringify(updates, null, 2));
 
         const { data, error } = await supabaseAdmin
             .from('tenants')
@@ -57,14 +48,14 @@ export async function PUT(req: Request) {
             .single();
 
         if (error) {
-            console.error(`[BACKEND] Error updating barbershop ${tenant.id}:`, error);
+            console.error('[BARBERSHOP PUT] Database error:', error);
             throw error;
         }
 
-        console.log(`[BACKEND] Update successful for ${tenant.id}`);
+        console.log('[BARBERSHOP PUT] Success for tenant:', tenant.id);
         return NextResponse.json(data);
     } catch (error: any) {
-        console.error('[BACKEND] Error in PUT barbershop:', error.message);
+        console.error('[BARBERSHOP PUT] Error:', error.message);
         return NextResponse.json({ error: error.message }, { status: 400 });
     }
 }
