@@ -10,13 +10,13 @@ export async function OPTIONS(req: Request) {
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        const { name, email, barbershopName } = body;
+        const { name, email, password, barbershopName } = body;
 
         console.log('[API SIGNUP] Email:', email, 'Barbershop:', barbershopName);
 
-        if (!name || !email || !barbershopName) {
+        if (!name || !email || !password || !barbershopName) {
             const response = NextResponse.json(
-                { error: 'Nome, e-mail e barbearia são obrigatórios' },
+                { error: 'Nome, e-mail, senha e barbearia são obrigatórios' },
                 { status: 400 }
             );
             return addCorsHeaders(req, response);
@@ -25,6 +25,7 @@ export async function POST(req: Request) {
         // 1. Criar usuário no Auth
         const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: email,
+            password: password,
             email_confirm: true,
             user_metadata: { name }
         });
