@@ -67,6 +67,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     console.log('[POST USER] Body received', body);
     const {
+      userId: existingUserId,
       email,
       name,
       role: requestRole,
@@ -81,6 +82,29 @@ export async function POST(req: Request) {
       state,
       generateInvite = false
     } = body;
+
+    // Se informou userId, estamos apenas gerando o link para um usuário existente
+    if (existingUserId && generateInvite) {
+      console.log('[POST USER] Re-generating link for existing user:', existingUserId);
+      const { data: userToInvite, error: findError } = await supabaseAdmin
+        .from('users')
+        .select('email')
+        .eq('id', existingUserId)
+        .single();
+
+      if (findError || !userToInvite) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
+
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'invite',
+        email: userToInvite.email,
+        options: {
+          redirectTo: `${process.env.NEXT_PUBLIC_OWNER_URL || 'https://791barber.com'}/login`
+        }
+      });
+
+      if (linkError) return NextResponse.json({ error: linkError.message }, { status: 400 });
+      return NextResponse.json({ inviteLink: linkData.properties?.action_link });
+    }
 
     if (!email || !requestRole) {
       return NextResponse.json({ error: 'Email e Função são obrigatórios' }, { status: 400 });
