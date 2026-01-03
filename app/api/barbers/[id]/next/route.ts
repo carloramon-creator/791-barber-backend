@@ -34,8 +34,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             .single();
 
         if (fetchError || !nextClient) {
-            // Se não tem ninguém esperando, barbeiro fica 'available'
-            await client.from('barbers').update({ status: 'available' }).eq('id', barberId);
+            // Se não tem ninguém esperando, barbeiro fica 'online'
+            await client.from('barbers').update({ status: 'online' }).eq('id', barberId);
             return NextResponse.json({ message: 'Não há clientes na fila' });
         }
 

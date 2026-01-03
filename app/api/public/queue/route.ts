@@ -27,12 +27,13 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Nenhuma barbearia encontrada' }, { status: 404 });
         }
 
-        // 1. Buscar todos barbeiros ATIVOS do tenant
+        // 1. Buscar todos barbeiros ATIVOS e NÃO-OFFLINE do tenant
         const { data: barbers, error: barbersError } = await supabaseAdmin
             .from('barbers')
             .select('*')
             .eq('tenant_id', tenantId)
             .eq('is_active', true)
+            .neq('status', 'offline')
             .order('name', { ascending: true });
 
         if (barbersError) throw barbersError;

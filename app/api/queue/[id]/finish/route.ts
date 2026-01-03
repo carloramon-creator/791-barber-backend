@@ -42,13 +42,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             .eq('barber_id', queueEntry.barber_id)
             .eq('status', 'waiting');
 
-        // Se não houver ninguém esperando, barbeiro fica available
+        // Se não houver ninguém esperando, barbeiro fica online
         if (count === 0) {
-            await client.from('barbers').update({ status: 'available' }).eq('id', queueEntry.barber_id);
+            await client.from('barbers').update({ status: 'online' }).eq('id', queueEntry.barber_id);
         }
 
-        // 4. Retornar se o plano permite venda
-        const canCreateSale = tenant.plan === 'intermediate' || tenant.plan === 'complete';
+        // 4. Retornar se o plano permite venda (intermediate, complete, premium ou trial)
+        const canCreateSale = ['intermediate', 'complete', 'premium', 'trial'].includes(tenant.plan);
 
         return NextResponse.json({
             message: 'Atendimento finalizado',

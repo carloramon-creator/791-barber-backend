@@ -52,7 +52,7 @@ export async function GET() {
             };
         });
 
-        const onlineBarbersCount = queueStatus.filter(b => b.is_active).length;
+        const onlineBarbersCount = queueStatus.filter(b => b.status === 'online' || b.status === 'busy').length;
         const busyBarbersCount = queueStatus.filter(b => b.status === 'busy').length;
 
         return NextResponse.json({
