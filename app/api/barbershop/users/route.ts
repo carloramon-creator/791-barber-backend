@@ -2,6 +2,15 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
 import { getCurrentUserAndTenant, checkRolePermission } from '@/app/lib/utils';
 
+// Função auxiliar para garantir o URL correto de redirecionamento
+const getRedirectUrl = () => {
+    const envUrl = process.env.NEXT_PUBLIC_OWNER_URL;
+    if (envUrl && !envUrl.includes('localhost')) {
+        return `${envUrl}/login`;
+    }
+    return 'https://791barber.com/login';
+};
+
 export async function GET(req: Request) {
   try {
     const { tenant, role } = await getCurrentUserAndTenant();
@@ -95,20 +104,19 @@ export async function POST(req: Request) {
 
     let inviteLink = null;
     if (generateInvite && targetEmail) {
-      // Tenta Convite
+      const redirectTo = getRedirectUrl();
+      
       const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
         type: 'invite',
         email: targetEmail,
-        options: { redirectTo: `${process.env.NEXT_PUBLIC_OWNER_URL || 'https://791barber.com'}/login` }
+        options: { redirectTo }
       });
 
       if (linkErr || !linkData.properties?.action_link) {
-        console.log('[BACKEND] Invite link failed, trying recovery link as fallback...');
-        // Tenta Recuperação de Senha (funciona para quem já existe)
         const { data: recoveryData, error: recoveryErr } = await supabaseAdmin.auth.admin.generateLink({
           type: 'recovery',
           email: targetEmail,
-          options: { redirectTo: `${process.env.NEXT_PUBLIC_OWNER_URL || 'https://791barber.com'}/login` }
+          options: { redirectTo }
         });
         if (!recoveryErr) inviteLink = recoveryData.properties?.action_link;
       } else {
@@ -117,12 +125,11 @@ export async function POST(req: Request) {
     }
 
     if (generateInvite && !inviteLink) {
-        throw new Error('O sistema de login não permitiu gerar um link para este e-mail. Verifique se o e-mail está correto.');
+        throw new Error('O sistema de login não permitiu gerar um link para este e-mail.');
     }
 
     return NextResponse.json({ ...finalUserRecord, inviteLink });
   } catch (error: any) {
-    console.error('[BACKEND USERS] POST Error:', error.message);
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 }
