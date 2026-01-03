@@ -56,7 +56,17 @@ export async function POST(req: Request) {
             .eq('tenant_id', tenant.id)
             .single();
 
-        if (productError || !product) throw new Error('Produto não encontrado');
+        if (productError) {
+            console.error('[BACKEND] Inventory POST Product Lookup Error:', productError);
+            if (productError.code === 'PGRST116') {
+                return NextResponse.json({ error: 'Produto não encontrado para este estabelecimento' }, { status: 404 });
+            }
+            return NextResponse.json({ error: `Erro ao buscar produto: ${productError.message}` }, { status: 500 });
+        }
+
+        if (!product) {
+            return NextResponse.json({ error: 'Produto não encontrado' }, { status: 404 });
+        }
 
         const newQuantity = type === 'entry'
             ? (product.stock_quantity || 0) + quantity
