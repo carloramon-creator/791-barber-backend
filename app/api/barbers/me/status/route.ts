@@ -49,7 +49,7 @@ export async function PATCH(req: Request) {
 
             if (diffMinutes > 90) {
                 return NextResponse.json({
-                    error: 'O barbeiro precisa estar logado no sistema para ficar Online. Ele não teve atividade recente.'
+                    error: 'O barbeiro precisa estar logado no sistema para ficar Online.'
                 }, { status: 400 });
             }
         }

@@ -80,6 +80,7 @@ export async function GET() {
             return {
                 barber_id: barber.id,
                 barber_name: barber.name,
+                user_id: barber.user_id,
                 photo_url: barber.photo_url,
                 status: barber.status,
                 is_active: barber.is_active,
