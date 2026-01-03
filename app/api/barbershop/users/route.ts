@@ -28,15 +28,12 @@ export async function POST(req: Request) {
     let targetEmail = email?.toLowerCase();
     let userId = existingUserId;
 
-    // CASO 1: GERAR LINK PARA ID EXISTENTE
     if (userId && generateInvite) {
       const { data: u } = await supabaseAdmin.from('users').select('email').eq('id', userId).single();
       if (u) targetEmail = u.email;
     }
 
-    // CASO 2: NOVO CONVITE OU RECUPERAÇÃO POR EMAIL
     if (!userId && targetEmail) {
-      // Tenta criar o usuário no Auth
       const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email: targetEmail,
         email_confirm: true,
@@ -44,9 +41,7 @@ export async function POST(req: Request) {
       });
 
       if (createError) {
-        // Se já existe, precisamos achar o ID dele na lista do Auth
         if (createError.message.includes('already been registered')) {
-          console.log('[BACKEND] User already exists in Auth, searching ID...');
           const { data: { users: authUsers } } = await supabaseAdmin.auth.admin.listUsers();
           const found = authUsers?.find(u => u.email?.toLowerCase() === targetEmail);
           userId = found?.id;
@@ -60,15 +55,9 @@ export async function POST(req: Request) {
 
     if (!userId) throw new Error('Não foi possível identificar o usuário');
 
-    // Vincular ou Atualizar no public.users
-    let userPayload: any = {};
-
-    if (existingUserId && generateInvite) {
-      // Se estamos apenas gerando link para alguém que já existe, 
-      // não vamos dar upsert completo para não resetar campos.
-      // Apenas garantimos que o e-mail está certo se necessário.
-    } else {
-      userPayload = {
+    let finalUserRecord = null;
+    if (!(existingUserId && generateInvite)) {
+      const userPayload: any = {
         id: userId,
         tenant_id: tenant.id,
         email: targetEmail,
@@ -88,33 +77,50 @@ export async function POST(req: Request) {
         commission_value: body.commission_value || 50
       };
 
-      // Remove campos undefined
       Object.keys(userPayload).forEach(key => userPayload[key] === undefined && delete userPayload[key]);
-
-      const { data: newUserRecord, error: upsertError } = await supabaseAdmin.from('users').upsert(userPayload).select().single();
-
+      const { data: upserted, error: upsertError } = await supabaseAdmin.from('users').upsert(userPayload).select().single();
+      
       if (upsertError && upsertError.message.includes('column')) {
-        const minimalFields = ['id', 'tenant_id', 'email', 'name', 'role', 'phone', 'cpf', 'cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state'];
-        const cleanPayload: any = {};
-        minimalFields.forEach(f => { if (userPayload[f] !== undefined) cleanPayload[f] = userPayload[f]; });
-        await supabaseAdmin.from('users').upsert(cleanPayload);
+          const minimalFields = ['id', 'tenant_id', 'email', 'name', 'role', 'phone', 'cpf', 'cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state'];
+          const cleanPayload: any = {};
+          minimalFields.forEach(f => { if (userPayload[f] !== undefined) cleanPayload[f] = userPayload[f]; });
+          const { data: retry } = await supabaseAdmin.from('users').upsert(cleanPayload).select().single();
+          finalUserRecord = retry;
       } else if (upsertError) throw upsertError;
+      else finalUserRecord = upserted;
+    } else {
+      const { data: existing } = await supabaseAdmin.from('users').select('*').eq('id', userId).single();
+      finalUserRecord = existing;
     }
 
-    // Buscar usuário final para retornar os dados certos
-    const { data: finalUser } = await supabaseAdmin.from('users').select('*').eq('id', userId).single();
-
     let inviteLink = null;
-    if (generateInvite) {
+    if (generateInvite && targetEmail) {
+      // Tenta Convite
       const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
         type: 'invite',
         email: targetEmail,
         options: { redirectTo: `${process.env.NEXT_PUBLIC_OWNER_URL || 'https://791barber.com'}/login` }
       });
-      if (!linkErr) inviteLink = linkData.properties?.action_link;
+
+      if (linkErr || !linkData.properties?.action_link) {
+        console.log('[BACKEND] Invite link failed, trying recovery link as fallback...');
+        // Tenta Recuperação de Senha (funciona para quem já existe)
+        const { data: recoveryData, error: recoveryErr } = await supabaseAdmin.auth.admin.generateLink({
+          type: 'recovery',
+          email: targetEmail,
+          options: { redirectTo: `${process.env.NEXT_PUBLIC_OWNER_URL || 'https://791barber.com'}/login` }
+        });
+        if (!recoveryErr) inviteLink = recoveryData.properties?.action_link;
+      } else {
+        inviteLink = linkData.properties?.action_link;
+      }
     }
 
-    return NextResponse.json({ ...finalUser, inviteLink });
+    if (generateInvite && !inviteLink) {
+        throw new Error('O sistema de login não permitiu gerar um link para este e-mail. Verifique se o e-mail está correto.');
+    }
+
+    return NextResponse.json({ ...finalUserRecord, inviteLink });
   } catch (error: any) {
     console.error('[BACKEND USERS] POST Error:', error.message);
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -126,7 +132,7 @@ export async function PUT(req: Request) {
     const { tenant, role: currentUserRole } = await getCurrentUserAndTenant();
     checkRolePermission(currentUserRole, 'manage_users');
     const body = await req.json();
-
+    
     const updates: any = {
       name: body.name,
       role: body.role,
@@ -145,19 +151,32 @@ export async function PUT(req: Request) {
     };
 
     Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
-
     const { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', body.id).select().single();
 
     if (error && error.message.includes('column')) {
-      // Fallback se colunas novas falharem
-      const legacy = { ...updates };
-      delete legacy.avg_service_time; delete legacy.commission_type; delete legacy.commission_value;
-      const { data: retry } = await supabaseAdmin.from('users').update(legacy).eq('id', body.id).select().single();
-      return NextResponse.json(retry);
+       const legacy = { ...updates };
+       delete legacy.avg_service_time; delete legacy.commission_type; delete legacy.commission_value;
+       const { data: retry } = await supabaseAdmin.from('users').update(legacy).eq('id', body.id).select().single();
+       return NextResponse.json(retry);
     }
 
     if (error) throw error;
     return NextResponse.json(data);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { tenant, role } = await getCurrentUserAndTenant();
+    checkRolePermission(role, 'manage_users');
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+    if (!id) throw new Error('ID é obrigatório');
+    const { error } = await supabaseAdmin.from('users').delete().eq('id', id).eq('tenant_id', tenant.id);
+    if (error) throw error;
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
