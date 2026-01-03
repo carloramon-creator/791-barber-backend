@@ -87,7 +87,12 @@ export async function getCurrentUserAndTenant() {
         console.log('[BACKEND] Tenant found:', tenant.name, 'Plan:', tenant.plan);
         const user = { id: userAuthId };
 
-        return { user, tenant, role: userData.role };
+        return {
+            user,
+            tenant,
+            role: userData.role, // Mantendo por compatibilidade temporária
+            roles: userData.roles || [userData.role] // Novo padrão
+        };
     } catch (e: any) {
         console.error('[BACKEND] Critical error in getCurrentUserAndTenant:', e.message);
         throw e;
@@ -105,15 +110,21 @@ export function assertPlanAtLeast(currentPlan: Plan, requiredPlan: Plan) {
     }
 }
 
-export function checkRolePermission(role: string, action: 'view_finance' | 'manage_users' | 'manage_plan' | 'manage_all_queues' | 'edit_barbershop') {
+export function checkRolePermission(userRoles: string | string[], action: 'view_finance' | 'manage_users' | 'manage_plan' | 'manage_all_queues' | 'edit_barbershop') {
+    const roles = Array.isArray(userRoles) ? userRoles : [userRoles];
+
     const permissions: Record<string, string[]> = {
         owner: ['view_finance', 'manage_users', 'manage_plan', 'manage_all_queues', 'edit_barbershop'],
         staff: ['manage_all_queues', 'edit_barbershop'],
         barber: []
     };
 
-    const allowedActions = permissions[role] || [];
-    if (!allowedActions.includes(action)) {
+    const hasPermission = roles.some(role => {
+        const allowedActions = permissions[role] || [];
+        return allowedActions.includes(action);
+    });
+
+    if (!hasPermission) {
         throw new Error('Você não tem permissão para realizar esta ação.');
     }
 }

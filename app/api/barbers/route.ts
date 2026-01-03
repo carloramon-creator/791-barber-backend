@@ -20,8 +20,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
     try {
-        const { tenant, role } = await getCurrentUserAndTenant();
-        if (role !== 'owner' && role !== 'staff') {
+        const { tenant, roles } = await getCurrentUserAndTenant();
+        if (!roles.includes('owner') && !roles.includes('staff')) {
             return NextResponse.json({ error: 'Somente o dono ou funcionários podem gerenciar barbeiros' }, { status: 403 });
         }
 

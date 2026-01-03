@@ -29,13 +29,17 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { tenant, role: currentUserRole } = await getCurrentUserAndTenant();
-    checkRolePermission(currentUserRole, 'manage_users');
+    const { tenant, roles: currentUserRoles } = await getCurrentUserAndTenant();
+    checkRolePermission(currentUserRoles, 'manage_users');
     const body = await req.json();
-    const { userId: existingUserId, email, name, role: requestRole, generateInvite = false } = body;
+    const { userId: existingUserId, email, name, role: requestRole, roles: requestRoles, generateInvite = false, photo_url } = body;
 
     let targetEmail = email?.toLowerCase();
     let userId = existingUserId;
+
+    // Determinar roles finais (preferência pelo array roles, fallback para role)
+    const finalRoles = requestRoles || (requestRole ? [requestRole] : ['staff']);
+    const primaryRole = finalRoles[0] || 'staff';
 
     if (userId && generateInvite) {
       const { data: u } = await supabaseAdmin.from('users').select('email').eq('id', userId).single();
@@ -71,7 +75,9 @@ export async function POST(req: Request) {
         tenant_id: tenant.id,
         email: targetEmail,
         name: name || targetEmail.split('@')[0],
-        role: requestRole || 'staff',
+        role: primaryRole,
+        roles: finalRoles,
+        photo_url,
         phone: body.phone,
         cpf: body.cpf,
         cep: body.cep,
@@ -89,14 +95,21 @@ export async function POST(req: Request) {
       Object.keys(userPayload).forEach(key => userPayload[key] === undefined && delete userPayload[key]);
       const { data: upserted, error: upsertError } = await supabaseAdmin.from('users').upsert(userPayload).select().single();
 
-      if (upsertError && upsertError.message.includes('column')) {
-        const minimalFields = ['id', 'tenant_id', 'email', 'name', 'role', 'phone', 'cpf', 'cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state'];
-        const cleanPayload: any = {};
-        minimalFields.forEach(f => { if (userPayload[f] !== undefined) cleanPayload[f] = userPayload[f]; });
-        const { data: retry } = await supabaseAdmin.from('users').upsert(cleanPayload).select().single();
-        finalUserRecord = retry;
-      } else if (upsertError) throw upsertError;
-      else finalUserRecord = upserted;
+      if (upsertError) throw upsertError;
+      finalUserRecord = upserted;
+
+      // Sincronizar com a tabela de barbeiros se a role barber estiver presente
+      if (finalRoles.includes('barber')) {
+        await supabaseAdmin.from('barbers').upsert({
+          tenant_id: tenant.id,
+          user_id: userId,
+          name: name || targetEmail.split('@')[0],
+          photo_url: photo_url,
+          avg_time_minutes: body.avg_service_time || 30,
+          commission_percentage: body.commission_type === 'percentage' ? body.commission_value : 0,
+          is_active: true
+        }, { onConflict: 'tenant_id,user_id' });
+      }
     } else {
       const { data: existing } = await supabaseAdmin.from('users').select('*').eq('id', userId).single();
       finalUserRecord = existing;
@@ -136,13 +149,18 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
-    const { tenant, role: currentUserRole } = await getCurrentUserAndTenant();
-    checkRolePermission(currentUserRole, 'manage_users');
+    const { tenant, roles: currentUserRoles } = await getCurrentUserAndTenant();
+    checkRolePermission(currentUserRoles, 'manage_users');
     const body = await req.json();
+
+    const finalRoles = body.roles || (body.role ? [body.role] : undefined);
+    const primaryRole = finalRoles ? finalRoles[0] : undefined;
 
     const updates: any = {
       name: body.name,
-      role: body.role,
+      role: primaryRole,
+      roles: finalRoles,
+      photo_url: body.photo_url,
       phone: body.phone,
       cpf: body.cpf,
       cep: body.cep,
@@ -160,14 +178,25 @@ export async function PUT(req: Request) {
     Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
     const { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', body.id).select().single();
 
-    if (error && error.message.includes('column')) {
-      const legacy = { ...updates };
-      delete legacy.avg_service_time; delete legacy.commission_type; delete legacy.commission_value;
-      const { data: retry } = await supabaseAdmin.from('users').update(legacy).eq('id', body.id).select().single();
-      return NextResponse.json(retry);
+    if (error) throw error;
+
+    // Sincronizar com a tabela de barbeiros
+    const currentRoles = data.roles || [];
+    if (currentRoles.includes('barber')) {
+      await supabaseAdmin.from('barbers').upsert({
+        tenant_id: tenant.id,
+        user_id: body.id,
+        name: data.name,
+        photo_url: data.photo_url,
+        avg_time_minutes: data.avg_service_time || 30,
+        commission_percentage: data.commission_type === 'percentage' ? data.commission_value : 0,
+        is_active: true
+      }, { onConflict: 'tenant_id,user_id' });
+    } else {
+      // Se não for mais barbeiro, desativar na tabela de barbeiros
+      await supabaseAdmin.from('barbers').update({ is_active: false }).eq('tenant_id', tenant.id).eq('user_id', body.id);
     }
 
-    if (error) throw error;
     return NextResponse.json(data);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 400 });
