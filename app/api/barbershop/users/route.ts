@@ -4,11 +4,11 @@ import { getCurrentUserAndTenant, checkRolePermission } from '@/app/lib/utils';
 
 // Função auxiliar para garantir o URL correto de redirecionamento
 const getRedirectUrl = () => {
-    const envUrl = process.env.NEXT_PUBLIC_OWNER_URL;
-    if (envUrl && !envUrl.includes('localhost')) {
-        return `${envUrl}/login`;
-    }
-    return 'https://791barber.com/login';
+  const envUrl = process.env.NEXT_PUBLIC_OWNER_URL;
+  if (envUrl && !envUrl.includes('localhost')) {
+    return `${envUrl}/login`;
+  }
+  return 'https://791barber.com/login';
 };
 
 export async function GET(req: Request) {
@@ -88,13 +88,13 @@ export async function POST(req: Request) {
 
       Object.keys(userPayload).forEach(key => userPayload[key] === undefined && delete userPayload[key]);
       const { data: upserted, error: upsertError } = await supabaseAdmin.from('users').upsert(userPayload).select().single();
-      
+
       if (upsertError && upsertError.message.includes('column')) {
-          const minimalFields = ['id', 'tenant_id', 'email', 'name', 'role', 'phone', 'cpf', 'cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state'];
-          const cleanPayload: any = {};
-          minimalFields.forEach(f => { if (userPayload[f] !== undefined) cleanPayload[f] = userPayload[f]; });
-          const { data: retry } = await supabaseAdmin.from('users').upsert(cleanPayload).select().single();
-          finalUserRecord = retry;
+        const minimalFields = ['id', 'tenant_id', 'email', 'name', 'role', 'phone', 'cpf', 'cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state'];
+        const cleanPayload: any = {};
+        minimalFields.forEach(f => { if (userPayload[f] !== undefined) cleanPayload[f] = userPayload[f]; });
+        const { data: retry } = await supabaseAdmin.from('users').upsert(cleanPayload).select().single();
+        finalUserRecord = retry;
       } else if (upsertError) throw upsertError;
       else finalUserRecord = upserted;
     } else {
@@ -105,7 +105,7 @@ export async function POST(req: Request) {
     let inviteLink = null;
     if (generateInvite && targetEmail) {
       const redirectTo = getRedirectUrl();
-      
+
       const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
         type: 'invite',
         email: targetEmail,
@@ -125,7 +125,7 @@ export async function POST(req: Request) {
     }
 
     if (generateInvite && !inviteLink) {
-        throw new Error('O sistema de login não permitiu gerar um link para este e-mail.');
+      throw new Error('O sistema de login não permitiu gerar um link para este e-mail.');
     }
 
     return NextResponse.json({ ...finalUserRecord, inviteLink });
@@ -139,7 +139,7 @@ export async function PUT(req: Request) {
     const { tenant, role: currentUserRole } = await getCurrentUserAndTenant();
     checkRolePermission(currentUserRole, 'manage_users');
     const body = await req.json();
-    
+
     const updates: any = {
       name: body.name,
       role: body.role,
@@ -161,10 +161,10 @@ export async function PUT(req: Request) {
     const { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', body.id).select().single();
 
     if (error && error.message.includes('column')) {
-       const legacy = { ...updates };
-       delete legacy.avg_service_time; delete legacy.commission_type; delete legacy.commission_value;
-       const { data: retry } = await supabaseAdmin.from('users').update(legacy).eq('id', body.id).select().single();
-       return NextResponse.json(retry);
+      const legacy = { ...updates };
+      delete legacy.avg_service_time; delete legacy.commission_type; delete legacy.commission_value;
+      const { data: retry } = await supabaseAdmin.from('users').update(legacy).eq('id', body.id).select().single();
+      return NextResponse.json(retry);
     }
 
     if (error) throw error;
