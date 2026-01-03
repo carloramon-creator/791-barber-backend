@@ -35,6 +35,25 @@ export async function PATCH(req: Request) {
             return NextResponse.json({ error: 'Status inválido' }, { status: 400 });
         }
 
+        // Regra Especial: Bloquear 'online' ou 'busy' se o usuário não tiver atividade recente
+        if (status === 'online' || status === 'busy') {
+            const { data: userData } = await supabaseAdmin
+                .from('users')
+                .select('last_seen_at')
+                .eq('id', user.id)
+                .single();
+
+            const lastSeen = userData?.last_seen_at ? new Date(userData.last_seen_at) : null;
+            const now = new Date();
+            const diffMinutes = lastSeen ? (now.getTime() - lastSeen.getTime()) / 60000 : Infinity;
+
+            if (diffMinutes > 90) {
+                return NextResponse.json({
+                    error: 'O barbeiro precisa estar logado no sistema para ficar Online. Ele não teve atividade recente.'
+                }, { status: 400 });
+            }
+        }
+
         const { data: updated, error } = await supabaseAdmin
             .from('barbers')
             .update({ status })
