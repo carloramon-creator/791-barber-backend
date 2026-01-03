@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
 import { getCurrentUserAndTenant, checkRolePermission } from '@/app/lib/utils';
-import { UserRole } from '@/app/lib/types';
 
 export async function GET(req: Request) {
   try {
@@ -23,15 +22,12 @@ export async function POST(req: Request) {
   try {
     const { tenant, role: currentUserRole } = await getCurrentUserAndTenant();
     checkRolePermission(currentUserRole, 'manage_users');
-
     const body = await req.json();
     const { userId: existingUserId, email, name, role: requestRole, generateInvite = false } = body;
 
-    // CASO 1: APENAS GERAR LINK PARA USUÁRIO QUE JÁ EXISTE NA LISTA
     if (existingUserId && generateInvite) {
       const { data: u } = await supabaseAdmin.from('users').select('email').eq('id', existingUserId).single();
       if (!u) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
-      
       const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
         type: 'invite',
         email: u.email,
@@ -41,10 +37,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ inviteLink: linkData.properties?.action_link });
     }
 
-    // CASO 2: NOVO USUÁRIO (OU RE-CONVITE POR FORMULÁRIO)
     if (!email) return NextResponse.json({ error: 'Email é obrigatório' }, { status: 400 });
 
-    // 1. Verificar se já existe no Auth
     const { data: { users: authUsers } } = await supabaseAdmin.auth.admin.listUsers();
     let authUser = authUsers?.find(u => u.email?.toLowerCase() === email.toLowerCase());
     let userId = authUser?.id;
@@ -59,7 +53,6 @@ export async function POST(req: Request) {
       userId = created.user?.id;
     }
 
-    // 2. Upsert no public.users (ignorar colunas que podem não existir ainda no banco)
     const userPayload: any = {
       id: userId,
       tenant_id: tenant.id,
@@ -74,33 +67,29 @@ export async function POST(req: Request) {
       complement: body.complement || '',
       neighborhood: body.neighborhood,
       city: body.city,
-      state: body.state
+      state: body.state,
+      avg_service_time: body.avg_service_time || 30,
+      commission_type: body.commission_type || 'percentage',
+      commission_value: body.commission_value || 50
     };
 
-    // Tentar incluir campos de barbeiro apenas se vierem no body (evita erro de coluna se não existirem)
-    if (body.avg_service_time) userPayload.avg_service_time = body.avg_service_time;
-    if (body.commission_type) userPayload.commission_type = body.commission_type;
-    if (body.commission_value) userPayload.commission_value = body.commission_value;
+    // Filtro inteligente: tenta salvar. Se der erro de coluna, remove a coluna e tenta de novo.
+    let { data: newUser, error: upsertError } = await supabaseAdmin.from('users').upsert(userPayload).select().single();
 
-    const { data: newUser, error: upsertError } = await supabaseAdmin
-      .from('users')
-      .upsert(userPayload)
-      .select()
-      .single();
+    if (upsertError && upsertError.message.includes('column')) {
+       console.warn('[BACKEND] Reduzindo payload devido a colunas ausentes...');
+       const cleanPayload = { ...userPayload };
+       // Se o erro mencionar uma coluna específica, poderíamos remover só ela, 
+       // mas para garantir o funcionamento do usuário agora, vamos remover os campos novos se falhar.
+       const newFields = ['phone', 'cpf', 'cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state', 'avg_service_time', 'commission_type', 'commission_value'];
+       newFields.forEach(f => {
+         if (upsertError?.message.includes(`column "${f}"`)) delete cleanPayload[f];
+       });
+       const { data: retry, error: retryErr } = await supabaseAdmin.from('users').upsert(cleanPayload).select().single();
+       if (retryErr) throw retryErr;
+       newUser = retry;
+    } else if (upsertError) throw upsertError;
 
-    if (upsertError && upsertError.message.includes('avg_service_time')) {
-       // Se o erro for a coluna, tenta salvar sem as colunas novas
-       delete userPayload.avg_service_time;
-       delete userPayload.commission_type;
-       delete userPayload.commission_value;
-       const { data: retryUser, error: retryError } = await supabaseAdmin.from('users').upsert(userPayload).select().single();
-       if (retryError) throw retryError;
-       return NextResponse.json({ ...retryUser, inviteLink: null });
-    }
-
-    if (upsertError) throw upsertError;
-
-    // 3. Link se solicitado
     let inviteLink = null;
     if (generateInvite) {
       const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
@@ -110,10 +99,8 @@ export async function POST(req: Request) {
       });
       inviteLink = linkData.properties?.action_link;
     }
-
     return NextResponse.json({ ...newUser, inviteLink });
   } catch (error: any) {
-    console.error('[BACKEND USERS] Error:', error.message);
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 }
@@ -132,28 +119,26 @@ export async function PUT(req: Request) {
       cep: body.cep,
       street: body.street,
       number: body.number,
-      complement: body.complement || '', // Forçar vazio se vir nulo
+      complement: body.complement || '',
       neighborhood: body.neighborhood,
       city: body.city,
-      state: body.state
+      state: body.state,
+      avg_service_time: body.avg_service_time,
+      commission_type: body.commission_type,
+      commission_value: body.commission_value
     };
 
-    if (body.avg_service_time) updates.avg_service_time = body.avg_service_time;
-    if (body.commission_type) updates.commission_type = body.commission_type;
-    if (body.commission_value) updates.commission_value = body.commission_value;
+    Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
 
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .update(updates)
-      .eq('id', body.id)
-      .select()
-      .single();
+    let { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', body.id).select().single();
 
-    if (error && error.message.includes('avg_service_time')) {
-        delete updates.avg_service_time;
-        delete updates.commission_type;
-        delete updates.commission_value;
-        const { data: retry } = await supabaseAdmin.from('users').update(updates).eq('id', body.id).select().single();
+    if (error && error.message.includes('column')) {
+        const cleanUpdates = { ...updates };
+        const newFields = ['phone', 'cpf', 'cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state', 'avg_service_time', 'commission_type', 'commission_value'];
+        newFields.forEach(f => {
+            if (error?.message.includes(`column "${f}"`)) delete cleanUpdates[f];
+        });
+        const { data: retry } = await supabaseAdmin.from('users').update(cleanUpdates).eq('id', body.id).select().single();
         return NextResponse.json(retry);
     }
 
