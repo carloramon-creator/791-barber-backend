@@ -60,6 +60,11 @@ export async function getCurrentUserAndTenant() {
 
         console.log('[BACKEND] User autenticado (final):', userAuthId);
 
+        // 3. Atualizar last_seen_at (presença) em background
+        supabaseAdmin.from('users').update({ last_seen_at: new Date() }).eq('id', userAuthId).then(({ error }) => {
+            if (error) console.error('[PRESENCE UPDATE ERROR]', error.message);
+        });
+
         // Buscar dados do usuário (role e tenant_id)
         const { data: userData, error: userError } = await supabaseAdmin
             .from('users')

@@ -8,7 +8,14 @@ export async function GET() {
         const { tenant } = await getCurrentUserAndTenant();
         const { data, error } = await supabaseAdmin
             .from('finance')
-            .select('*')
+            .select(`
+                *,
+                finance_categories (
+                    id,
+                    name,
+                    type
+                )
+            `)
             .eq('tenant_id', tenant.id)
             .order('date', { ascending: false });
 
@@ -21,8 +28,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
     try {
-        const { tenant, role } = await getCurrentUserAndTenant();
-        if (role !== 'owner') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+        const { tenant, roles } = await getCurrentUserAndTenant();
+        if (!roles.includes('owner')) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
 
         const body = await req.json();
         console.log('[BACKEND] Creating finance record(s):', body);
@@ -40,6 +47,7 @@ export async function POST(req: Request) {
                     ? `${body.description} [${i + 1}/${count}]`
                     : body.description,
                 date: format(currentIterDate, 'yyyy-MM-dd'),
+                category_id: body.category_id,
                 is_recurring: body.is_recurring,
                 recurrence_period: body.recurrence_period,
                 recurrence_count: count
