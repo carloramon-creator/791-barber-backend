@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
     try {
         const { tenant, role } = await getCurrentUserAndTenant();
-        if (role !== 'owner') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+        if (role !== 'owner' && role !== 'staff') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
 
         const body = await req.json();
         console.log('[BARBERSHOP PUT] Payload received:', JSON.stringify(body, null, 2));

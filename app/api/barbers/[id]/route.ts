@@ -5,7 +5,7 @@ import { getCurrentUserAndTenant } from '@/app/lib/utils';
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { tenant, role } = await getCurrentUserAndTenant();
-        if (role !== 'owner') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+        if (role !== 'owner' && role !== 'staff') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
 
         const { id } = await params;
         const body = await req.json();
@@ -37,7 +37,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { tenant, role } = await getCurrentUserAndTenant();
-        if (role !== 'owner') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+        if (role !== 'owner' && role !== 'staff') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
 
         const { id } = await params;
 

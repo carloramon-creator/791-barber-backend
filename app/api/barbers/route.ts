@@ -21,8 +21,8 @@ export async function GET() {
 export async function POST(req: Request) {
     try {
         const { tenant, role } = await getCurrentUserAndTenant();
-        if (role !== 'owner') {
-            return NextResponse.json({ error: 'Somente o dono pode adicionar barbeiros' }, { status: 403 });
+        if (role !== 'owner' && role !== 'staff') {
+            return NextResponse.json({ error: 'Somente o dono ou funcionários podem gerenciar barbeiros' }, { status: 403 });
         }
 
         const { name, photo_url, avg_time_minutes, commission_percentage, is_active } = await req.json();

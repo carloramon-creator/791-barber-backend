@@ -108,7 +108,7 @@ export function assertPlanAtLeast(currentPlan: Plan, requiredPlan: Plan) {
 export function checkRolePermission(role: string, action: 'view_finance' | 'manage_users' | 'manage_plan' | 'manage_all_queues' | 'edit_barbershop') {
     const permissions: Record<string, string[]> = {
         owner: ['view_finance', 'manage_users', 'manage_plan', 'manage_all_queues', 'edit_barbershop'],
-        staff: ['manage_all_queues'],
+        staff: ['manage_all_queues', 'edit_barbershop'],
         barber: []
     };
 
