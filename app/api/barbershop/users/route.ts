@@ -10,7 +10,7 @@ export async function GET(req: Request) {
 
     const { data: users, error } = await supabaseAdmin
       .from('users')
-      .select('id, name, email, role, phone, cpf, cep, street, number, complement, neighborhood, city, state, avg_service_time, commission_type, commission_value, created_at')
+      .select('*')
       .eq('tenant_id', tenant.id)
       .order('created_at', { ascending: false });
 
