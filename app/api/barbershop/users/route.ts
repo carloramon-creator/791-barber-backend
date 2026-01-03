@@ -25,40 +25,48 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { userId: existingUserId, email, name, role: requestRole, generateInvite = false } = body;
 
-    if (existingUserId && generateInvite) {
-      const { data: u } = await supabaseAdmin.from('users').select('email').eq('id', existingUserId).single();
-      if (!u) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
-      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'invite',
-        email: u.email,
-        options: { redirectTo: `${process.env.NEXT_PUBLIC_OWNER_URL || 'https://791barber.com'}/login` }
-      });
-      if (linkError) return NextResponse.json({ error: linkError.message }, { status: 400 });
-      return NextResponse.json({ inviteLink: linkData.properties?.action_link });
+    let targetEmail = email?.toLowerCase();
+    let userId = existingUserId;
+
+    // CASO 1: GERAR LINK PARA ID EXISTENTE
+    if (userId && generateInvite) {
+      const { data: u } = await supabaseAdmin.from('users').select('email').eq('id', userId).single();
+      if (u) targetEmail = u.email;
     }
 
-    if (!email) return NextResponse.json({ error: 'Email é obrigatório' }, { status: 400 });
-
-    const { data: { users: authUsers } } = await supabaseAdmin.auth.admin.listUsers();
-    let authUser = authUsers?.find(u => u.email?.toLowerCase() === email.toLowerCase());
-    let userId = authUser?.id;
-
-    if (!userId) {
+    // CASO 2: NOVO CONVITE OU RECUPERAÇÃO POR EMAIL
+    if (!userId && targetEmail) {
+      // Tenta criar o usuário no Auth
       const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
-        email,
+        email: targetEmail,
         email_confirm: true,
         user_metadata: { name }
       });
-      if (createError) throw createError;
-      userId = created.user?.id;
+
+      if (createError) {
+        // Se já existe, precisamos achar o ID dele na lista do Auth
+        if (createError.message.includes('already been registered')) {
+          console.log('[BACKEND] User already exists in Auth, searching ID...');
+          const { data: { users: authUsers } } = await supabaseAdmin.auth.admin.listUsers();
+          const found = authUsers?.find(u => u.email?.toLowerCase() === targetEmail);
+          userId = found?.id;
+        } else {
+          throw createError;
+        }
+      } else {
+        userId = created.user?.id;
+      }
     }
 
+    if (!userId) throw new Error('Não foi possível identificar o usuário');
+
+    // Vincular ou Atualizar no public.users
     const userPayload: any = {
       id: userId,
       tenant_id: tenant.id,
-      email: email.toLowerCase(),
-      name: name,
-      role: requestRole,
+      email: targetEmail,
+      name: name || targetEmail.split('@')[0],
+      role: requestRole || 'staff',
       phone: body.phone,
       cpf: body.cpf,
       cep: body.cep,
@@ -73,34 +81,41 @@ export async function POST(req: Request) {
       commission_value: body.commission_value || 50
     };
 
-    // Filtro inteligente: tenta salvar. Se der erro de coluna, remove a coluna e tenta de novo.
-    let { data: newUser, error: upsertError } = await supabaseAdmin.from('users').upsert(userPayload).select().single();
+    // Remove campos undefined para não sobrescrever com null se não enviado
+    Object.keys(userPayload).forEach(key => userPayload[key] === undefined && delete userPayload[key]);
 
+    const { data: newUser, error: upsertError } = await supabaseAdmin.from('users').upsert(userPayload).select().single();
+    
+    // Se der erro de coluna (caso a migration ainda não tenha batido 100% no cache), remove campos extras
     if (upsertError && upsertError.message.includes('column')) {
-       console.warn('[BACKEND] Reduzindo payload devido a colunas ausentes...');
-       const cleanPayload = { ...userPayload };
-       // Se o erro mencionar uma coluna específica, poderíamos remover só ela, 
-       // mas para garantir o funcionamento do usuário agora, vamos remover os campos novos se falhar.
-       const newFields = ['phone', 'cpf', 'cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state', 'avg_service_time', 'commission_type', 'commission_value'];
-       newFields.forEach(f => {
-         if (upsertError?.message.includes(`column "${f}"`)) delete cleanPayload[f];
-       });
-       const { data: retry, error: retryErr } = await supabaseAdmin.from('users').upsert(cleanPayload).select().single();
-       if (retryErr) throw retryErr;
-       newUser = retry;
-    } else if (upsertError) throw upsertError;
+        const minimalFields = ['id', 'tenant_id', 'email', 'name', 'role', 'phone', 'cpf', 'cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state'];
+        const cleanPayload: any = {};
+        minimalFields.forEach(f => { if (userPayload[f] !== undefined) cleanPayload[f] = userPayload[f]; });
+        const { data: retry } = await supabaseAdmin.from('users').upsert(cleanPayload).select().single();
+        if (generateInvite) {
+           const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
+             type: 'invite', email: targetEmail, options: { redirectTo: `${process.env.NEXT_PUBLIC_OWNER_URL || 'https://791barber.com'}/login` }
+           });
+           return NextResponse.json({ ...retry, inviteLink: linkData.properties?.action_link });
+        }
+        return NextResponse.json(retry);
+    }
+
+    if (upsertError) throw upsertError;
 
     let inviteLink = null;
     if (generateInvite) {
-      const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
+      const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
         type: 'invite',
-        email: email,
+        email: targetEmail,
         options: { redirectTo: `${process.env.NEXT_PUBLIC_OWNER_URL || 'https://791barber.com'}/login` }
       });
-      inviteLink = linkData.properties?.action_link;
+      if (!linkErr) inviteLink = linkData.properties?.action_link;
     }
+
     return NextResponse.json({ ...newUser, inviteLink });
   } catch (error: any) {
+    console.error('[BACKEND USERS] POST Error:', error.message);
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 }
@@ -130,16 +145,14 @@ export async function PUT(req: Request) {
 
     Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
 
-    let { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', body.id).select().single();
+    const { data, error } = await supabaseAdmin.from('users').update(updates).eq('id', body.id).select().single();
 
     if (error && error.message.includes('column')) {
-        const cleanUpdates = { ...updates };
-        const newFields = ['phone', 'cpf', 'cep', 'street', 'number', 'complement', 'neighborhood', 'city', 'state', 'avg_service_time', 'commission_type', 'commission_value'];
-        newFields.forEach(f => {
-            if (error?.message.includes(`column "${f}"`)) delete cleanUpdates[f];
-        });
-        const { data: retry } = await supabaseAdmin.from('users').update(cleanUpdates).eq('id', body.id).select().single();
-        return NextResponse.json(retry);
+       // Fallback se colunas novas falharem
+       const legacy = { ...updates };
+       delete legacy.avg_service_time; delete legacy.commission_type; delete legacy.commission_value;
+       const { data: retry } = await supabaseAdmin.from('users').update(legacy).eq('id', body.id).select().single();
+       return NextResponse.json(retry);
     }
 
     if (error) throw error;
