@@ -30,13 +30,22 @@ export async function GET(req: Request) {
         // 1. Buscar todos barbeiros ATIVOS e NÃO-OFFLINE do tenant
         const { data: barbers, error: barbersError } = await supabaseAdmin
             .from('barbers')
-            .select('*')
+            .select('*, users!inner(last_seen_at)')
             .eq('tenant_id', tenantId)
             .eq('is_active', true)
             .neq('status', 'offline')
             .order('name', { ascending: true });
 
         if (barbersError) throw barbersError;
+
+        // 1.1 Filtrar barbeiros que não estão realmente "logados" (inatividade > 30 min)
+        const now = new Date();
+        const activeBarbers = (barbers || []).filter(barber => {
+            const lastSeen = (barber as any).users?.last_seen_at ? new Date((barber as any).users.last_seen_at) : null;
+            if (!lastSeen) return false;
+            const diffMinutes = (now.getTime() - lastSeen.getTime()) / 60000;
+            return diffMinutes <= 30; // Tolerância de 30 minutos de inatividade
+        });
 
         // 2. Buscar itens de fila ativos
         const { data: allQueueItems, error: queueError } = await supabaseAdmin
@@ -49,7 +58,7 @@ export async function GET(req: Request) {
         if (queueError) throw queueError;
 
         // 3. Consolidar os dados
-        const consolidated = barbers?.map(barber => {
+        const consolidated = activeBarbers.map(barber => {
             const barberQueue = allQueueItems?.filter(q => q.barber_id === barber.id) || [];
 
             const formattedQueue = barberQueue.map(q => ({

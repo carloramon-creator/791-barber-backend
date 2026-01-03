@@ -10,6 +10,33 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         const { id } = await params;
         const body = await req.json();
 
+        // Regra Especial: Bloquear 'online' ou 'busy' se o usuário não estiver logado/ativo
+        if (body.status === 'online' || body.status === 'busy') {
+            const { data: barber } = await supabaseAdmin
+                .from('barbers')
+                .select('user_id')
+                .eq('id', id)
+                .single();
+
+            if (barber?.user_id) {
+                const { data: user } = await supabaseAdmin
+                    .from('users')
+                    .select('last_seen_at')
+                    .eq('id', barber.user_id)
+                    .single();
+
+                const lastSeen = user?.last_seen_at ? new Date(user.last_seen_at) : null;
+                const now = new Date();
+                const diffMinutes = lastSeen ? (now.getTime() - lastSeen.getTime()) / 60000 : Infinity;
+
+                if (diffMinutes > 15) {
+                    return NextResponse.json({
+                        error: 'O barbeiro precisa estar logado no sistema para ficar Online. Ele não teve atividade recente.'
+                    }, { status: 400 });
+                }
+            }
+        }
+
         // Remover campos que não devem ser atualizados via PATCH ou que podem causar erro
         const { id: _, created_at: __, tenant_id: ___, ...updates } = body;
 
