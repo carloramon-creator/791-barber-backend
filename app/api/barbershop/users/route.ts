@@ -117,8 +117,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ inviteLink: linkData.properties?.action_link });
     }
 
-    // Validação APENAS para novos usuários
-    if (!email || !requestRole) {
+    // Validação APENAS para novos usuários (sem existingUserId)
+    if (!existingUserId && (!email || !requestRole)) {
       return NextResponse.json({ error: 'Email e Função são obrigatórios para novos usuários' }, { status: 400 });
     }
 
@@ -328,8 +328,14 @@ export async function PUT(req: Request) {
       commission_value
     };
 
-    // Remover campos undefined
-    Object.keys(updates).forEach(key => (updates as any)[key] === undefined && delete (updates as any)[key]);
+    // Remover campos que vieram vazios ('') ou undefined para NÃO APAGAR o que já existe no banco
+    Object.keys(updates).forEach(key => {
+      if ((updates as any)[key] === undefined || (updates as any)[key] === '') {
+        delete (updates as any)[key];
+      }
+    });
+
+    console.log('[BACKEND] Final update payload:', updates);
 
     const { data: updatedUser, error: updateError } = await supabaseAdmin
       .from('users')

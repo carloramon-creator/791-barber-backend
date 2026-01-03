@@ -9,7 +9,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const { id: queueId } = await params;
     try {
         const { tenant, role } = await getCurrentUserAndTenant();
-        assertPlanAtLeast(tenant.plan, 'intermediate');
+        assertPlanAtLeast(tenant.plan, 'complete');
 
         const { services, products, payment_method } = await req.json();
         const client = await supabase();
