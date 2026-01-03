@@ -134,6 +134,50 @@ export function checkRolePermission(userRoles: string | string[], action: 'view_
     }
 }
 
+export async function getDynamicBarberAverages(tenantId: string): Promise<Record<string, number>> {
+    try {
+        // Busca os últimos 50 serviços finalizados do tenant para calcular a média real
+        const { data: recentServices, error } = await supabaseAdmin
+            .from('client_queue')
+            .select('barber_id, started_at, finished_at')
+            .eq('tenant_id', tenantId)
+            .eq('status', 'finished')
+            .not('started_at', 'is', null)
+            .not('finished_at', 'is', null)
+            .order('finished_at', { ascending: false })
+            .limit(50);
+
+        if (error || !recentServices) return {};
+
+        const groupings: Record<string, number[]> = {};
+        recentServices.forEach(s => {
+            if (s.started_at && s.finished_at) {
+                const start = new Date(s.started_at).getTime();
+                const finish = new Date(s.finished_at).getTime();
+                const duration = (finish - start) / 60000;
+
+                // Ignorar durações irreais (menos de 2min ou mais de 3h)
+                if (duration >= 2 && duration <= 180) {
+                    if (!groupings[s.barber_id]) groupings[s.barber_id] = [];
+                    groupings[s.barber_id].push(duration);
+                }
+            }
+        });
+
+        const averages: Record<string, number> = {};
+        Object.keys(groupings).forEach(barberId => {
+            const durations = groupings[barberId];
+            const sum = durations.reduce((acc, d) => acc + d, 0);
+            averages[barberId] = Math.round(sum / durations.length);
+        });
+
+        return averages;
+    } catch (e) {
+        console.error('[DYNAMIC METRICS ERROR]', e);
+        return {};
+    }
+}
+
 export function getStatusColor(status: string) {
     switch (status) {
         case 'waiting': return 'yellow';

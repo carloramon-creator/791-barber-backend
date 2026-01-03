@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
-import { getCurrentUserAndTenant, getStatusColor } from '@/app/lib/utils';
+import { getCurrentUserAndTenant, getStatusColor, getDynamicBarberAverages } from '@/app/lib/utils';
 import { startOfDay, endOfDay } from 'date-fns';
 
 export async function GET() {
@@ -8,6 +8,9 @@ export async function GET() {
         const { tenant } = await getCurrentUserAndTenant();
         const todayStart = startOfDay(new Date()).toISOString();
         const todayEnd = endOfDay(new Date()).toISOString();
+
+        // 1. Médias dinâmicas
+        const dynamicAverages = await getDynamicBarberAverages(tenant.id);
 
         // Fazemos todas as buscas em paralelo usando supabaseAdmin para evitar overhead de RLS
         const [
@@ -24,21 +27,49 @@ export async function GET() {
         if (salesError) throw salesError;
         if (queueError) throw queueError;
 
-        // 1. Processar Métricas
+        // 2. Processar Métricas de Faturamento
         const billingToday = sales?.reduce((acc, s) => acc + Number(s.total), 0) || 0;
         const waitingCount = allQueueItems?.filter(q => q.status === 'waiting').length || 0;
 
-        // 2. Processar Status dos Barbeiros
+        // 3. Processar Status dos Barbeiros com Cálculo Dinâmico
         const queueStatus = (barbers || []).map(barber => {
             const barberQueue = allQueueItems?.filter(q => q.barber_id === barber.id) || [];
-            const formattedQueue = barberQueue.map(q => ({
-                ...q,
-                status_color: getStatusColor(q.status)
-            }));
+            const attendingItem = barberQueue.find(q => q.status === 'attending');
+            const waitingItems = barberQueue.filter(q => q.status === 'waiting');
 
-            const totalEstimatedWait = formattedQueue
-                .filter(q => q.status === 'waiting')
-                .length * barber.avg_time_minutes;
+            const avgTime = dynamicAverages[barber.id] || barber.avg_time_minutes;
+
+            const formattedQueue = barberQueue.map(q => {
+                let itemWait = 0;
+
+                if (q.status === 'waiting') {
+                    const posInWaiting = waitingItems.findIndex(w => w.id === q.id);
+                    itemWait = posInWaiting * avgTime;
+
+                    if (attendingItem && attendingItem.started_at) {
+                        const elapsed = (new Date().getTime() - new Date(attendingItem.started_at).getTime()) / 60000;
+                        const remaining = Math.max(2, avgTime - elapsed);
+                        itemWait += Math.round(remaining);
+                    }
+                } else if (q.status === 'attending' && q.started_at) {
+                    const elapsed = (new Date().getTime() - new Date(q.started_at).getTime()) / 60000;
+                    itemWait = Math.round(Math.max(2, avgTime - elapsed));
+                }
+
+                return {
+                    ...q,
+                    estimated_time_minutes: itemWait,
+                    status_color: getStatusColor(q.status)
+                };
+            });
+
+            let totalEstimatedWait = waitingItems.length * avgTime;
+
+            if (attendingItem && attendingItem.started_at) {
+                const elapsed = (new Date().getTime() - new Date(attendingItem.started_at).getTime()) / 60000;
+                const remaining = Math.max(2, avgTime - elapsed);
+                totalEstimatedWait += Math.round(remaining);
+            }
 
             return {
                 barber_id: barber.id,
@@ -46,7 +77,7 @@ export async function GET() {
                 photo_url: barber.photo_url,
                 status: barber.status,
                 is_active: barber.is_active,
-                avg_time_minutes: barber.avg_time_minutes,
+                avg_time_minutes: avgTime,
                 queue: formattedQueue,
                 total_estimated_wait_minutes: totalEstimatedWait
             };
@@ -55,11 +86,15 @@ export async function GET() {
         const onlineBarbersCount = queueStatus.filter(b => b.status === 'online' || b.status === 'busy').length;
         const busyBarbersCount = queueStatus.filter(b => b.status === 'busy').length;
 
+        // Média geral de tempo de espera (dos barbeiros que estão atendendo)
+        const totalWaitAll = queueStatus.reduce((acc, b) => acc + b.total_estimated_wait_minutes, 0);
+        const avgWaitTime = onlineBarbersCount > 0 ? Math.round(totalWaitAll / onlineBarbersCount) : 0;
+
         return NextResponse.json({
             metrics: {
                 billingToday,
                 queueCount: waitingCount,
-                avgWaitTime: 25,
+                avgWaitTime,
                 busyBarbers: busyBarbersCount,
                 onlineBarbers: onlineBarbersCount
             },

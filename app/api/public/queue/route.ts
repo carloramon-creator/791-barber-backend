@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
-import { getStatusColor } from '@/app/lib/utils';
+import { getStatusColor, getDynamicBarberAverages } from '@/app/lib/utils';
 
 /**
  * Endpoint PÚBLICO para clientes verem as filas da barbearia.
@@ -27,7 +27,10 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Nenhuma barbearia encontrada' }, { status: 404 });
         }
 
-        // 1. Buscar todos barbeiros ATIVOS e NÃO-OFFLINE do tenant
+        // 1. Médias dinâmicas
+        const dynamicAverages = await getDynamicBarberAverages(tenantId);
+
+        // 2. Buscar todos barbeiros ATIVOS e NÃO-OFFLINE do tenant
         const { data: barbers, error: barbersError } = await supabaseAdmin
             .from('barbers')
             .select('*, users!inner(last_seen_at)')
@@ -60,20 +63,46 @@ export async function GET(req: Request) {
         // 3. Consolidar os dados
         const consolidated = activeBarbers.map(barber => {
             const barberQueue = allQueueItems?.filter(q => q.barber_id === barber.id) || [];
+            const attendingItem = barberQueue.find(q => q.status === 'attending');
+            const waitingItems = barberQueue.filter(q => q.status === 'waiting');
 
-            const formattedQueue = barberQueue.map(q => ({
-                id: q.id,
-                client_name: q.client_name,
-                client_phone: q.client_phone,
-                status: q.status,
-                position: q.position,
-                estimated_time_minutes: q.estimated_time_minutes,
-                status_color: getStatusColor(q.status)
-            }));
+            const avgTime = dynamicAverages[barber.id] || barber.avg_time_minutes;
 
-            const totalEstimatedWait = formattedQueue
-                .filter(q => q.status === 'waiting')
-                .length * barber.avg_time_minutes;
+            const formattedQueue = barberQueue.map(q => {
+                let itemWait = 0;
+
+                if (q.status === 'waiting') {
+                    const posInWaiting = waitingItems.findIndex(w => w.id === q.id);
+                    itemWait = posInWaiting * avgTime;
+
+                    if (attendingItem && attendingItem.started_at) {
+                        const elapsed = (new Date().getTime() - new Date(attendingItem.started_at).getTime()) / 60000;
+                        const remaining = Math.max(2, avgTime - elapsed);
+                        itemWait += Math.round(remaining);
+                    }
+                } else if (q.status === 'attending' && q.started_at) {
+                    const elapsed = (new Date().getTime() - new Date(q.started_at).getTime()) / 60000;
+                    itemWait = Math.round(Math.max(2, avgTime - elapsed));
+                }
+
+                return {
+                    id: q.id,
+                    client_name: q.client_name,
+                    client_phone: q.client_phone,
+                    status: q.status,
+                    position: q.position,
+                    estimated_time_minutes: itemWait,
+                    status_color: getStatusColor(q.status)
+                };
+            });
+
+            let totalEstimatedWait = waitingItems.length * avgTime;
+
+            if (attendingItem && attendingItem.started_at) {
+                const elapsed = (new Date().getTime() - new Date(attendingItem.started_at).getTime()) / 60000;
+                const remaining = Math.max(2, avgTime - elapsed);
+                totalEstimatedWait += Math.round(remaining);
+            }
 
             return {
                 barber_id: barber.id,
@@ -81,7 +110,7 @@ export async function GET(req: Request) {
                 photo_url: barber.photo_url,
                 status: barber.status,
                 is_active: barber.is_active,
-                avg_time_minutes: barber.avg_time_minutes,
+                avg_time_minutes: avgTime,
                 queue: formattedQueue,
                 total_estimated_wait_minutes: totalEstimatedWait
             };
