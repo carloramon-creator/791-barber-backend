@@ -38,13 +38,13 @@ export async function GET(req: Request) {
 
         if (barbersError) throw barbersError;
 
-        // 1.1 Filtrar barbeiros que não estão realmente "logados" (inatividade > 30 min)
+        // 1.1 Filtrar barbeiros que não estão realmente "logados" (inatividade > 90 min)
         const now = new Date();
         const activeBarbers = (barbers || []).filter(barber => {
             const lastSeen = (barber as any).users?.last_seen_at ? new Date((barber as any).users.last_seen_at) : null;
             if (!lastSeen) return false;
             const diffMinutes = (now.getTime() - lastSeen.getTime()) / 60000;
-            return diffMinutes <= 30; // Tolerância de 30 minutos de inatividade
+            return diffMinutes <= 90; // Tolerância de 1h30m de inatividade
         });
 
         // 2. Buscar itens de fila ativos

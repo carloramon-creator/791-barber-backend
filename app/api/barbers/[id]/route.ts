@@ -29,9 +29,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
                 const now = new Date();
                 const diffMinutes = lastSeen ? (now.getTime() - lastSeen.getTime()) / 60000 : Infinity;
 
-                if (diffMinutes > 15) {
+                if (diffMinutes > 90) {
                     return NextResponse.json({
-                        error: 'O barbeiro precisa estar logado no sistema para ficar Online. Ele não teve atividade recente.'
+                        error: 'O barbeiro precisa estar logado no sistema para ficar Online. Ele não teve atividade recente (mais de 1h30m).'
                     }, { status: 400 });
                 }
             }
