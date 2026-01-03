@@ -6,10 +6,46 @@ export async function GET() {
     try {
         const { tenant } = await getCurrentUserAndTenant();
 
+        // 1. Buscar todos os usuários que têm a role 'barber'
+        const { data: barberUsers, error: usersError } = await supabaseAdmin
+            .from('users')
+            .select('*')
+            .eq('tenant_id', tenant.id)
+            .contains('roles', ['barber']);
+
+        if (usersError) throw usersError;
+
+        // 2. Para cada usuário barbeiro, garantir que existe uma entrada na tabela 'barbers'
+        if (barberUsers && barberUsers.length > 0) {
+            for (const user of barberUsers) {
+                const { data: existingBarber } = await supabaseAdmin
+                    .from('barbers')
+                    .select('id')
+                    .eq('tenant_id', tenant.id)
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+
+                if (!existingBarber) {
+                    console.log(`[BACKEND] Creating missing barber entry for user ${user.name}`);
+                    await supabaseAdmin.from('barbers').insert({
+                        tenant_id: tenant.id,
+                        user_id: user.id,
+                        name: user.name,
+                        photo_url: user.photo_url,
+                        avg_time_minutes: user.avg_service_time || 30,
+                        commission_percentage: user.commission_value || 0,
+                        is_active: true
+                    });
+                }
+            }
+        }
+
+        // 3. Retornar a lista completa da tabela barbers
         const { data: barbers, error } = await supabaseAdmin
             .from('barbers')
             .select('*')
-            .eq('tenant_id', tenant.id);
+            .eq('tenant_id', tenant.id)
+            .order('name');
 
         if (error) throw error;
         return NextResponse.json(barbers || []);
