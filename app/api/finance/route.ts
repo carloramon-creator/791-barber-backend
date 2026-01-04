@@ -50,7 +50,8 @@ export async function POST(req: Request) {
                 category_id: body.category_id,
                 is_recurring: body.is_recurring,
                 recurrence_period: body.recurrence_period,
-                recurrence_count: count
+                recurrence_count: count,
+                is_paid: body.is_paid !== undefined ? body.is_paid : true
             });
 
             if (body.is_recurring) {
