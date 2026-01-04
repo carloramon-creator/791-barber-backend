@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
 import { getCurrentUserAndTenant, getStatusColor, getDynamicBarberAverages } from '@/app/lib/utils';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Visão consolidada das filas de todos os barbeiros do tenant.
  */
@@ -38,6 +40,20 @@ export async function GET() {
             const barberQueue = allQueueItems?.filter(q => q.barber_id === barber.id) || [];
             const attendingItem = barberQueue.find(q => q.status === 'attending');
             const waitingItems = barberQueue.filter(q => q.status === 'waiting');
+
+            // --- SELF HEALING STATUS CHECK ---
+            // Corrige inconsistências entre o status do barbeiro e a fila real
+            let currentStatus = barber.status;
+            if (currentStatus === 'busy' && !attendingItem) {
+                // Diz que está ocupado, mas não tem ninguém sendo atendido -> LIVRE
+                supabaseAdmin.from('barbers').update({ status: 'available' }).eq('id', barber.id).then();
+                currentStatus = 'available';
+            } else if (currentStatus === 'available' && attendingItem) {
+                // Diz que está livre, mas tem alguém sendo atendido -> OCUPADO
+                supabaseAdmin.from('barbers').update({ status: 'busy' }).eq('id', barber.id).then();
+                currentStatus = 'busy';
+            }
+            // ---------------------------------
 
             // Usa a média dinâmica se disponível, senão usa a do cadastro
             const avgTime = dynamicAverages[barber.id] || barber.avg_time_minutes;
@@ -84,7 +100,7 @@ export async function GET() {
                 barber_name: barber.name,
                 user_id: barber.user_id,
                 photo_url: barber.photo_url,
-                status: barber.status,
+                status: currentStatus,
                 is_active: barber.is_active,
                 avg_time_minutes: avgTime, // Retorna a média atual real
                 queue: formattedQueue,
