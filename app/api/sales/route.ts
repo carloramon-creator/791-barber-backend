@@ -26,7 +26,9 @@ export async function GET(req: Request) {
                     products (name),
                     services (name)
                 )
-            `).order('created_at', { ascending: false });
+            `)
+            .eq('tenant_id', tenant.id)
+            .order('created_at', { ascending: false });
 
         if (error) throw error;
         return NextResponse.json(sales || []);

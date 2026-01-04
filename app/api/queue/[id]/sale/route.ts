@@ -87,33 +87,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }
 
         // 3. Calcular Comissão (Buscar configuração do barbeiro)
+        // 3. Calcular Comissão (Buscar configuração do barbeiro)
         let commissionValue = 0;
-        const { data: barberUser } = await client
-            .from('users')
-            .select('commission_value, commission_type')
-            .eq('id', queueItem.barber_id) // Assumindo que barber_id na fila é o user_id do barbeiro
-            .single();
-
-        // Se não achar na tabela users diretamente, tentar via tabela barbers join users
         let commissionRate = 50; // Default 50%
         let commissionType = 'percentage';
 
-        if (barberUser) {
-            commissionRate = Number(barberUser.commission_value || 50);
-            commissionType = barberUser.commission_type || 'percentage';
-        } else {
-            // Tenta buscar na tabela 'barbers' se for diferente de 'users'
-            const { data: barberLink } = await client
-                .from('barbers')
-                .select('user_id, users(commission_value, commission_type)')
-                .eq('id', queueItem.barber_id)
+        // Tenta obter user_id através da tabela barbers
+        const { data: barberData } = await client
+            .from('barbers')
+            .select('user_id')
+            .eq('id', queueItem.barber_id)
+            .single();
+
+        if (barberData && barberData.user_id) {
+            const { data: userData } = await client
+                .from('users')
+                .select('commission_value, commission_type')
+                .eq('id', barberData.user_id)
                 .single();
 
-            if (barberLink && barberLink.users) {
-                // @ts-ignore
-                commissionRate = Number(barberLink.users.commission_value || 50);
-                // @ts-ignore
-                commissionType = barberLink.users.commission_type || 'percentage';
+            if (userData) {
+                commissionRate = Number(userData.commission_value ?? 50);
+                commissionType = userData.commission_type || 'percentage';
             }
         }
 
