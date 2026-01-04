@@ -10,7 +10,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
     }
 
-    const { data: sales, error } = await supabaseAdmin
+    const { data: sales, error: salesError } = await supabaseAdmin
         .from('sales')
         .select(`
             *,
@@ -21,9 +21,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         .eq('barber_commission_paid', false)
         .eq('status', 'completed');
 
-    if (error) throw error;
+    if (salesError) throw salesError;
 
-    return NextResponse.json(sales);
+    // Fetch Barber Info with User Name
+    const { data: barberData } = await supabaseAdmin
+        .from('barbers')
+        .select('name, users(name)')
+        .eq('id', id)
+        .single();
+
+    const realName = (barberData?.users as any)?.name || barberData?.name || 'Profissional';
+
+    return NextResponse.json({
+        sales: sales || [],
+        barberName: realName
+    });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
