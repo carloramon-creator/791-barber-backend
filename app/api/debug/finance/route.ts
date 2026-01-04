@@ -42,8 +42,12 @@ export async function GET() {
             .is('tenant_id', null)
             .limit(20);
 
+        // Get table columns to verify schema
+        const { data: columns } = await supabaseAdmin.rpc('get_table_columns', { table_name_input: 'finance' });
+
         return NextResponse.json({
             tenant_id: tenant.id,
+            columns_found: columns,
             all_finance_count: allFinance?.length || 0,
             tenant_finance_count: tenantFinance?.length || 0,
             orphan_finance_count: orphanFinance?.length || 0,
