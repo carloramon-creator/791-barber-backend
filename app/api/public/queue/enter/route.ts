@@ -124,9 +124,10 @@ export async function POST(req: Request) {
             .insert({
                 tenant_id: barber.tenant_id,
                 barber_id: selectedBarberId,
-                client_id: client.id, // Vínculo com a tabela clients
+                client_id: client.id,
                 client_name,
-                client_phone, // Opcional manter redundante se quiser
+                client_phone,
+                is_priority: !!body.is_priority, // Aceitar flag de prioridade
                 status: 'waiting',
                 position: nextPosition,
                 estimated_time_minutes: estimatedTime
