@@ -32,7 +32,16 @@ export async function PUT(req: Request) {
             neighborhood: body.neighborhood || body.bairro,
             city: body.city || body.cidade,
             state: body.state || body.estado || body.uf,
-            logo_url: body.logo_url
+            logo_url: body.logo_url,
+            // Dados Bancários e PIX
+            pix_key: body.pix_key || body.chave_pix,
+            pix_key_type: body.pix_key_type || body.tipo_chave_pix,
+            bank_code: body.bank_code || body.cod_banco,
+            bank_agency: body.bank_agency || body.agencia,
+            bank_account: body.bank_account || body.conta,
+            bank_account_digit: body.bank_account_digit || body.digito,
+            bank_account_holder: body.bank_account_holder || body.titular,
+            bank_account_doc: body.bank_account_doc || body.cpf_cnpj_conta
         };
 
         // Limpeza de campos vazios ou undefined

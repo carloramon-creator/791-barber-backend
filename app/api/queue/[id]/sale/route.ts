@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
 import { getCurrentUserAndTenant } from '@/app/lib/utils';
+import { generatePixPayload } from '@/app/lib/pix';
 
 /**
  * Cria uma venda para um items items da fila.
@@ -118,14 +119,37 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             if (itemsError) throw itemsError;
         }
 
-        // 5. Se for Pix, gerar payload (mock ou real)
+        // 5. Se for Pix, gerar payload REAL
         let pixResponse = null;
         if (payment_method === 'pix') {
-            // Exemplo simples Mock
-            pixResponse = {
-                copyText: `00020126360014BR.GOV.BCB.PIX0114+5511999999999520400005303986540${totalAmount.toFixed(2).replace('.', '')}5802BR5913Barbearia 7916008BRASILIA62070503***6304ABCD`,
-                qrBase64: null
-            };
+            // Buscar chaves do tenant
+            const { data: tenantInfo } = await client
+                .from('tenants')
+                .select('pix_key, name, bank_account_holder')
+                .eq('id', tenant.id)
+                .single();
+
+            if (tenantInfo?.pix_key) {
+                const merchantName = tenantInfo.bank_account_holder || tenantInfo.name;
+                // Gerar payload QRCPS (BR Code)
+                const copyText = generatePixPayload(
+                    tenantInfo.pix_key,
+                    merchantName,
+                    'BRASIL', // Cidade (pode vir do banco depois, por enquanto BRASIL funciona na maioria)
+                    totalAmount,
+                    sale.id.replace(/-/g, '').substring(0, 25) // TxId (max 25)
+                );
+
+                pixResponse = {
+                    copyText: copyText,
+                    qrBase64: null // Frontend gera o QR visualmente
+                };
+            } else {
+                pixResponse = {
+                    copyText: '',
+                    warning: 'Chave PIX não configurada. Vá em Configurações para adicionar.'
+                };
+            }
         }
 
         return NextResponse.json({
