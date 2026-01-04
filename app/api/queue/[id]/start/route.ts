@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabase';
+import { supabaseAdmin } from '@/app/lib/supabase';
 import { getCurrentUserAndTenant } from '@/app/lib/utils';
 
 /**
@@ -8,13 +8,17 @@ import { getCurrentUserAndTenant } from '@/app/lib/utils';
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
     const { id: queueId } = await params;
+    console.log('[START_CLIENT] Tentando iniciar atendimento para fila:', queueId);
+
     try {
-        const { role } = await getCurrentUserAndTenant();
+        const { tenant, role } = await getCurrentUserAndTenant();
         if (role !== 'owner' && role !== 'barber') {
             return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
         }
 
-        const client = await supabase();
+        // Usar supabaseAdmin para garantir que encontramos o registro, independente de RLS
+        // A segurança é garantida verificando o tenant_id abaixo
+        const client = supabaseAdmin;
 
         // 1. Buscar o item da fila
         const { data: queueItem, error: fetchError } = await client
@@ -24,7 +28,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             .single();
 
         if (fetchError || !queueItem) {
+            console.error('[START_CLIENT] Erro ao buscar item:', fetchError);
             return NextResponse.json({ error: 'Cliente não encontrado na fila' }, { status: 404 });
+        }
+
+        // SEGURANÇA: Verificar se o item pertence ao mesmo tenant do usuário
+        if (queueItem.tenant_id !== tenant.id) {
+            console.error('[START_CLIENT] Tentativa de acesso a outro tenant:', queueItem.tenant_id, 'vs', tenant.id);
+            return NextResponse.json({ error: 'Acesso não autorizado a este cliente' }, { status: 403 });
         }
 
         // 2. Verificar se já está sendo atendido

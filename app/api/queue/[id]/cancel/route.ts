@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabase';
+import { supabaseAdmin } from '@/app/lib/supabase';
 import { getCurrentUserAndTenant } from '@/app/lib/utils';
 
 export async function PUT(
@@ -10,20 +10,28 @@ export async function PUT(
     const { tenant } = await getCurrentUserAndTenant();
     const { id: ticketId } = await params;
 
-    const client = await supabase();
+    // Usar supabaseAdmin para by-passar RLS (permissões de linha)
+    const client = supabaseAdmin;
 
-    // 1. Busca o ticket atual
+    // 1. Busca o ticket atual e verifica o tenant manualmente
     const { data: ticket, error: ticketError } = await client
       .from('client_queue')
       .select('id, tenant_id, barber_id, status, position')
       .eq('id', ticketId)
-      .eq('tenant_id', tenant.id)
       .single();
 
     if (ticketError || !ticket) {
       return NextResponse.json(
         { message: 'Ficha não encontrada.' },
         { status: 404 }
+      );
+    }
+
+    // Validação de Segurança Manual: Tenant Isolation
+    if (ticket.tenant_id !== tenant.id) {
+      return NextResponse.json(
+        { message: 'Acesso não autorizado a este recurso.' },
+        { status: 403 }
       );
     }
 
@@ -53,7 +61,7 @@ export async function PUT(
       .select('id')
       .eq('tenant_id', tenant.id)
       .eq('barber_id', ticket.barber_id)
-      .in('status', ['waiting'])
+      .eq('status', 'waiting')
       .order('position', { ascending: true });
 
     if (!queueError && remainingQueue) {
