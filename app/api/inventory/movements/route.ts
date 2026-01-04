@@ -13,7 +13,7 @@ export async function GET(req: Request) {
 
         let query = supabaseAdmin
             .from('product_movements')
-            .select('*, products(name)')
+            .select('*, products(name), users(name)')
             .eq('tenant_id', tenant.id)
             .order('created_at', { ascending: false });
 
