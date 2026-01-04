@@ -14,6 +14,9 @@ export async function GET() {
                     id,
                     name,
                     type
+                ),
+                barbers (
+                    name
                 )
             `)
             .eq('tenant_id', tenant.id)

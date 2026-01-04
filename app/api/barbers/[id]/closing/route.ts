@@ -46,6 +46,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         .from('finance')
         .insert({
             tenant_id: tenant.id,
+            barber_id: barberId,
             type: 'expense',
             description: `Fechamento Barbeiro - ID ${barberId.slice(0, 8)}`,
             value: body.totalCommission + (body.bonus || 0),

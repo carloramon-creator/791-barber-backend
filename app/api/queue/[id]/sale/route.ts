@@ -117,9 +117,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 .insert(itemsToInsert);
 
             if (itemsError) throw itemsError;
+
+            // 5. Atualizar estoque e gerar movimentações
+            const productItems = salesItems.filter(i => i.item_type === 'product');
+            if (productItems.length > 0) {
+                const movementsToInsert = productItems.map(item => ({
+                    tenant_id: tenant.id,
+                    product_id: item.item_id,
+                    type: 'exit',
+                    quantity: item.quantity,
+                    price: item.price,
+                    description: `Venda #${sale.id.slice(-4)}`
+                }));
+
+                await client.from('product_movements').insert(movementsToInsert);
+            }
         }
 
-        // 5. Se for Pix, gerar payload REAL
+        // 6. Se for Pix, gerar payload REAL
         let pixResponse = null;
         if (payment_method === 'pix') {
             // Buscar chaves do tenant
