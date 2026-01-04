@@ -60,24 +60,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         console.log('[CLOSING] Finance created:', financeData.id);
 
-        // 2. Mark sales as paid and link to finance record
-        const { error: updateError } = await supabaseAdmin
-            .from('sales')
-            .update({
-                barber_commission_paid: true,
-                finance_id: financeData.id // Save the link for reversion
-            })
-            .in('id', body.saleIds)
-            .eq('tenant_id', tenant.id);
+        // 2. Mark sales as paid and link to finance record (ONLY if there are sales)
+        if (body.saleIds && body.saleIds.length > 0) {
+            const { error: updateError } = await supabaseAdmin
+                .from('sales')
+                .update({
+                    barber_commission_paid: true,
+                    finance_id: financeData.id // Save the link for reversion
+                })
+                .in('id', body.saleIds)
+                .eq('tenant_id', tenant.id);
 
-        if (updateError) {
-            console.error('[CLOSING] Sales update error:', updateError);
-            // Rollback finance if sales update fails (manual rollback since no transactions in HTTP)
-            await supabaseAdmin.from('finance').delete().eq('id', financeData.id);
-            throw updateError;
+            if (updateError) {
+                console.error('[CLOSING] Sales update error:', updateError);
+                // Rollback finance if sales update fails
+                await supabaseAdmin.from('finance').delete().eq('id', financeData.id);
+                throw updateError;
+            }
+            console.log('[CLOSING] Success! Sales updated:', body.saleIds.length);
+        } else {
+            console.log('[CLOSING] Success! No sales to update (Bonus only).');
         }
-
-        console.log('[CLOSING] Success! Sales updated:', body.saleIds.length);
 
         return NextResponse.json({ success: true });
     } catch (error: any) {
