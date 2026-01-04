@@ -3,6 +3,8 @@ import { supabaseAdmin } from '@/app/lib/supabase';
 import { getCurrentUserAndTenant } from '@/app/lib/utils';
 import { addDays, addWeeks, addMonths, parseISO, format } from 'date-fns';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
     try {
         const { tenant } = await getCurrentUserAndTenant();

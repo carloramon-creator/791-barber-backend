@@ -6,6 +6,8 @@ import { startOfDay, endOfDay } from 'date-fns';
 /**
  * Gera o DRE (Demonstrativo de Resultados do Exercício) filtrado por período.
  */
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
     try {
         const { tenant } = await getCurrentUserAndTenant();
@@ -21,6 +23,7 @@ export async function GET(req: Request) {
             .select(`
                 value, 
                 type, 
+                description,
                 finance_categories (name),
                 is_paid
             `)
@@ -51,20 +54,14 @@ export async function GET(req: Request) {
 
         const totalRevenue = salesRevenue + manualRevenue;
 
-        // Despesas Agrupadas
+        // Despesas (Detalhadas item a item, não agrupadas)
         const expenses = paidFinance.filter(f => f.type === 'expense');
         const expenseTotal = expenses.reduce((acc, curr) => acc + Number(curr.value), 0);
 
-        const expensesByCategory: Record<string, number> = {};
-        for (const exp of expenses) {
+        const expenseBreakdown = expenses.map(exp => ({
             // @ts-ignore
-            const catName = exp.finance_categories?.name || 'Sem Categoria';
-            expensesByCategory[catName] = (expensesByCategory[catName] || 0) + Number(exp.value);
-        }
-
-        const expenseBreakdown = Object.entries(expensesByCategory).map(([name, value]) => ({
-            name,
-            value
+            name: `${exp.description} (${exp.finance_categories?.name || 'Geral'})`,
+            value: Number(exp.value)
         })).sort((a, b) => b.value - a.value);
 
         return NextResponse.json({

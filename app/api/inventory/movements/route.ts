@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
 import { getCurrentUserAndTenant } from '@/app/lib/utils';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
     try {
         const { tenant } = await getCurrentUserAndTenant();
