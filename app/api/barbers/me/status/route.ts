@@ -36,6 +36,8 @@ export async function PATCH(req: Request) {
         }
 
         // Regra Especial: Bloquear 'available' ou 'busy' se o usuário não tiver atividade recente
+        // REMOVED temporarily to fix user issues
+        /* 
         if (status === 'available' || status === 'busy') {
             const { data: userData } = await supabaseAdmin
                 .from('users')
@@ -53,6 +55,7 @@ export async function PATCH(req: Request) {
                 }, { status: 400 });
             }
         }
+        */
 
         const { data: updated, error } = await supabaseAdmin
             .from('barbers')
