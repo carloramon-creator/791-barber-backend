@@ -19,7 +19,7 @@ export async function GET() {
             { data: allQueueItems, error: queueError }
         ] = await Promise.all([
             supabaseAdmin.from('barbers').select('*').eq('tenant_id', tenant.id).order('name', { ascending: true }),
-            supabaseAdmin.from('sales').select('total').eq('tenant_id', tenant.id).gte('created_at', todayStart).lte('created_at', todayEnd),
+            supabaseAdmin.from('sales').select('*').eq('tenant_id', tenant.id).gte('created_at', todayStart).lte('created_at', todayEnd),
             supabaseAdmin.from('client_queue').select('*').eq('tenant_id', tenant.id).in('status', ['waiting', 'attending']).order('position', { ascending: true })
         ]);
 
@@ -28,7 +28,16 @@ export async function GET() {
         if (queueError) throw queueError;
 
         // 2. Processar Métricas de Faturamento
-        const billingToday = sales?.reduce((acc, s) => acc + Number(s.total), 0) || 0;
+        let billingToday = 0;
+        try {
+            billingToday = sales?.reduce((acc, s) => {
+                const val = s.total_amount || (s as any).total || 0;
+                return acc + Number(val);
+            }, 0) || 0;
+        } catch (e) {
+            console.error('[SUMMARY] Error calculating billingToday:', e);
+        }
+
         const waitingCount = allQueueItems?.filter(q => q.status === 'waiting').length || 0;
 
         // 3. Processar Status dos Barbeiros com Cálculo Dinâmico

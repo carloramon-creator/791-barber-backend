@@ -23,6 +23,7 @@ export async function PUT(req: Request) {
         // Mapeamento explícito para garantir que salve independente do nome enviado (tradução)
         const updates = {
             name: body.name || body.nome,
+            email: body.email,
             cnpj: body.cnpj,
             phone: body.phone || body.telefone || body.whatsapp,
             cep: body.cep,

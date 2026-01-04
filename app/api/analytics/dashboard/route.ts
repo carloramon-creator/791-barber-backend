@@ -16,8 +16,8 @@ export async function GET() {
             .from('sales')
             .select('total_amount') // Corrigido
             .eq('tenant_id', tenant.id)
-            .gte('created_at', todayStart)
-            .lte('created_at', todayEnd);
+            .gte('created_at', new Date().toISOString().split('T')[0] + 'T00:00:00.000Z')
+            .lte('created_at', new Date().toISOString().split('T')[0] + 'T23:59:59.999Z');
 
         if (salesError) throw salesError;
 
