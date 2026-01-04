@@ -23,12 +23,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             .eq('barber_id', barberId)
             .eq('status', 'attending');
 
-        // 2. Buscar o próximo 'waiting' com menor posição
+        // 2. Buscar o próximo 'waiting' - prioridade primeiro, depois menor posição
         const { data: nextClient, error: fetchError } = await client
             .from('client_queue')
             .select('*')
             .eq('barber_id', barberId)
             .eq('status', 'waiting')
+            .order('is_priority', { ascending: false, nullsFirst: false })
             .order('position', { ascending: true })
             .limit(1)
             .single();

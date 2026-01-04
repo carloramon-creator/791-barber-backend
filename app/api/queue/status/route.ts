@@ -19,11 +19,13 @@ export async function GET() {
         if (barbersError) throw barbersError;
 
         // 2. Buscar TODOS os itens de fila ativos (waiting/attending) do tenant de uma vez
+        // Ordenar por prioridade primeiro, depois por posição
         const { data: allQueueItems, error: queueError } = await supabaseAdmin
             .from('client_queue')
             .select('*')
             .eq('tenant_id', tenant.id)
             .in('status', ['waiting', 'attending'])
+            .order('is_priority', { ascending: false, nullsFirst: false })
             .order('position', { ascending: true });
 
         if (queueError) throw queueError;
