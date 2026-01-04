@@ -8,19 +8,10 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
     try {
         const { tenant } = await getCurrentUserAndTenant();
-        const { data, error } = await supabaseAdmin
+        // Fetch finance records without joins to avoid filtering
+        const { data: financeData, error } = await supabaseAdmin
             .from('finance')
-            .select(`
-                *,
-                finance_categories (
-                    id,
-                    name,
-                    type
-                ),
-                barbers (
-                    name
-                )
-            `)
+            .select('*')
             .eq('tenant_id', tenant.id)
             .order('date', { ascending: false });
 
@@ -29,8 +20,36 @@ export async function GET() {
             throw error;
         }
 
-        console.log('[FINANCE API] Fetched finance records:', data?.length || 0);
-        return NextResponse.json(data || []);
+        console.log('[FINANCE API] Fetched finance records:', financeData?.length || 0);
+
+        if (!financeData || financeData.length === 0) {
+            return NextResponse.json([]);
+        }
+
+        // Fetch related categories and barbers
+        const categoryIds = [...new Set(financeData.map(f => f.category_id).filter(Boolean))];
+        const barberIds = [...new Set(financeData.map(f => f.barber_id).filter(Boolean))];
+
+        const [categoriesData, barbersData] = await Promise.all([
+            categoryIds.length > 0
+                ? supabaseAdmin.from('finance_categories').select('id, name, type').in('id', categoryIds)
+                : Promise.resolve({ data: [] }),
+            barberIds.length > 0
+                ? supabaseAdmin.from('barbers').select('id, name').in('id', barberIds)
+                : Promise.resolve({ data: [] })
+        ]);
+
+        const categoriesMap = new Map(categoriesData.data?.map(c => [c.id, c]) || []);
+        const barbersMap = new Map(barbersData.data?.map(b => [b.id, b]) || []);
+
+        // Merge data
+        const enrichedData = financeData.map(f => ({
+            ...f,
+            finance_categories: f.category_id ? categoriesMap.get(f.category_id) : null,
+            barbers: f.barber_id ? barbersMap.get(f.barber_id) : null
+        }));
+
+        return NextResponse.json(enrichedData);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
