@@ -90,6 +90,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             .from('sales')
             .insert({
                 tenant_id: tenant.id,
+                client_queue_id: queueId, // Adicionado campo obrigatório
                 barber_id: queueItem.barber_id,
                 client_id: queueItem.client_id,
                 total_amount: totalAmount,
