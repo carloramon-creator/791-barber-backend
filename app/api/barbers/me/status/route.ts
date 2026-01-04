@@ -31,12 +31,12 @@ export async function PATCH(req: Request) {
         const { user, tenant } = await getCurrentUserAndTenant();
         const { status } = await req.json();
 
-        if (!['online', 'offline', 'busy'].includes(status)) {
+        if (!['available', 'offline', 'busy'].includes(status)) {
             return NextResponse.json({ error: 'Status inválido' }, { status: 400 });
         }
 
-        // Regra Especial: Bloquear 'online' ou 'busy' se o usuário não tiver atividade recente
-        if (status === 'online' || status === 'busy') {
+        // Regra Especial: Bloquear 'available' ou 'busy' se o usuário não tiver atividade recente
+        if (status === 'available' || status === 'busy') {
             const { data: userData } = await supabaseAdmin
                 .from('users')
                 .select('last_seen_at')

@@ -45,17 +45,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
         if (finishError) throw finishError;
 
-        // 3. Verificar se ainda há pessoas na fila do barbeiro
-        const { count } = await client
-            .from('client_queue')
-            .select('*', { count: 'exact', head: true })
-            .eq('barber_id', queueEntry.barber_id)
-            .eq('status', 'waiting');
-
-        // Se não houver ninguém esperando, barbeiro fica online
-        if (count === 0) {
-            await client.from('barbers').update({ status: 'online' }).eq('id', queueEntry.barber_id);
-        }
+        // 3. Resetar status do barbeiro para 'available' (Livre) pois ele acabou de terminar um atendimento
+        await client.from('barbers').update({ status: 'available' }).eq('id', queueEntry.barber_id);
 
         // 4. Retornar se o plano permite venda (intermediate, complete, premium ou trial)
         const canCreateSale = ['intermediate', 'complete', 'premium', 'trial'].includes(tenant.plan);

@@ -131,6 +131,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 }));
 
                 await client.from('product_movements').insert(movementsToInsert);
+
+                // ATUALIZAÇÃO EXPLÍCITA DE ESTOQUE (Fallback/Direct)
+                // Para garantir que o estoque baixe mesmo se o trigger falhar
+                for (const item of productItems) {
+                    const { error: rpcError } = await client.rpc('decrement_stock', { p_id: item.item_id, p_qty: item.quantity });
+
+                    if (rpcError) {
+                        // Fallback se RPC não existir ou falhar: update direto
+                        const { data: prod } = await client.from('products').select('stock_quantity').eq('id', item.item_id).single();
+                        if (prod) {
+                            await client.from('products').update({ stock_quantity: (prod.stock_quantity || 0) - item.quantity }).eq('id', item.item_id);
+                        }
+                    }
+                }
             }
         }
 

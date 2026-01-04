@@ -48,6 +48,12 @@ export async function GET() {
 
             const avgTime = dynamicAverages[barber.id] || barber.avg_time_minutes;
 
+            // Determinar status real baseado na fila (se estiver marcado como busy mas não tiver ninguém atendendo, mostrar online)
+            let realStatus = barber.status;
+            if (realStatus === 'busy' && !attendingItem) {
+                realStatus = 'online';
+            }
+
             const formattedQueue = barberQueue.map(q => {
                 let itemWait = 0;
 
@@ -84,7 +90,7 @@ export async function GET() {
                 barber_id: barber.id,
                 barber_name: barber.name,
                 photo_url: barber.photo_url,
-                status: barber.status,
+                status: realStatus,
                 is_active: barber.is_active,
                 avg_time_minutes: avgTime,
                 queue: formattedQueue,
@@ -92,7 +98,7 @@ export async function GET() {
             };
         });
 
-        const onlineBarbersCount = queueStatus.filter(b => b.status === 'online' || b.status === 'busy').length;
+        const onlineBarbersCount = queueStatus.filter(b => b.status === 'available' || b.status === 'busy').length;
         const busyBarbersCount = queueStatus.filter(b => b.status === 'busy').length;
 
         // Média geral de tempo de espera (dos barbeiros que estão atendendo)

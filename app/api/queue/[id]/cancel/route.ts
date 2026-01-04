@@ -55,6 +55,11 @@ export async function PUT(
       );
     }
 
+    // Se a ficha estava em atendimento, liberar o barbeiro
+    if (ticket.status === 'attending') {
+      await client.from('barbers').update({ status: 'available' }).eq('id', ticket.barber_id);
+    }
+
     // 3. Reorganiza posições da fila daquele barbeiro
     const { data: remainingQueue, error: queueError } = await client
       .from('client_queue')

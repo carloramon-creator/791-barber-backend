@@ -38,9 +38,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         if (fetchError) throw fetchError;
 
         if (!nextClient) {
-            // Se não tem ninguém esperando, barbeiro fica 'online'
+            // Se não tem ninguém esperando, barbeiro fica 'available'
             await client.from('barbers')
-                .update({ status: 'online' })
+                .update({ status: 'available' })
                 .eq('id', barberId)
                 .eq('tenant_id', tenant.id);
 
