@@ -14,14 +14,14 @@ export async function POST() {
         const results: any = {};
 
         for (const table of tables) {
-            const { count, error } = await supabaseAdmin
+            const { data, error } = await supabaseAdmin
                 .from(table)
                 .update({ tenant_id: tenant.id })
                 .is('tenant_id', null)
-                .select('*', { count: 'exact', head: true });
+                .select();
 
             if (!error) {
-                results[table] = count;
+                results[table] = data?.length || 0;
             } else {
                 results[table] = error.message;
             }
@@ -58,17 +58,17 @@ export async function POST() {
         }
 
         // 3. Fix Barber Status 'unknown' or null -> 'offline'
-        const { count: statusFixed } = await supabaseAdmin
+        const { data: statusData } = await supabaseAdmin
             .from('barbers')
             .update({ status: 'offline' })
             .is('status', null)
-            .select('*', { count: 'exact', head: true });
+            .select();
 
         return NextResponse.json({
             success: true,
             tenant_backfill: results,
             commissions_recalculated: fixedCommissions,
-            status_fixed: statusFixed
+            status_fixed: statusData?.length || 0
         });
 
     } catch (error: any) {
