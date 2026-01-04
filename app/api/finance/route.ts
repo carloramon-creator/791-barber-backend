@@ -24,7 +24,12 @@ export async function GET() {
             .eq('tenant_id', tenant.id)
             .order('date', { ascending: false });
 
-        if (error) throw error;
+        if (error) {
+            console.error('[FINANCE API] Error fetching finance:', error);
+            throw error;
+        }
+
+        console.log('[FINANCE API] Fetched finance records:', data?.length || 0);
         return NextResponse.json(data || []);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
