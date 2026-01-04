@@ -18,7 +18,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         `)
         .eq('tenant_id', tenant.id)
         .eq('barber_id', id)
-        .eq('barber_commission_paid', false);
+        .eq('barber_commission_paid', false)
+        .eq('status', 'completed');
 
     if (error) throw error;
 
