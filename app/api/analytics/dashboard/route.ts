@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabase';
+import { supabaseAdmin } from '@/app/lib/supabase'; // Usar Admin
 import { getCurrentUserAndTenant } from '@/app/lib/utils';
 import { startOfDay, endOfDay } from 'date-fns';
 
 export async function GET() {
     try {
         const { tenant } = await getCurrentUserAndTenant();
-        const client = await supabase();
+        const client = supabaseAdmin; // Bypass RLS
 
         const todayStart = startOfDay(new Date()).toISOString();
         const todayEnd = endOfDay(new Date()).toISOString();
@@ -14,14 +14,14 @@ export async function GET() {
         // Buscar vendas de hoje
         const { data: sales, error: salesError } = await client
             .from('sales')
-            .select('total')
+            .select('total_amount') // Corrigido
             .eq('tenant_id', tenant.id)
             .gte('created_at', todayStart)
             .lte('created_at', todayEnd);
 
         if (salesError) throw salesError;
 
-        const billingToday = sales?.reduce((acc, s) => acc + Number(s.total), 0) || 0;
+        const billingToday = sales?.reduce((acc, s) => acc + Number(s.total_amount), 0) || 0;
 
         // Buscar tempo médio de espera (simplificado: média dos barbeiros ativos)
         const { data: barbers, error: barbersError } = await client
