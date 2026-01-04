@@ -36,6 +36,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         // 2. Calcular total
         let totalAmount = 0;
+        let servicesTotal = 0; // NEW: Track services separately
         const salesItems: any[] = [];
 
         // Processar Serviços
@@ -50,7 +51,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     const dbService = dbServices.find((ds: any) => ds.id === s.id);
                     if (dbService) {
                         const price = Number(dbService.price);
-                        totalAmount += price * s.qty;
+                        const itemTotal = price * s.qty;
+                        totalAmount += itemTotal;
+                        servicesTotal += itemTotal; // Track services total
                         salesItems.push({
                             item_type: 'service',
                             item_id: s.id,
@@ -75,6 +78,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                     if (dbProduct) {
                         const price = Number(dbProduct.price);
                         totalAmount += price * p.qty;
+                        // Products do NOT add to servicesTotal
                         salesItems.push({
                             item_type: 'product',
                             item_id: p.id,
@@ -112,8 +116,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             }
         }
 
+        // FIXED: Calculate commission ONLY on services, not products
         if (commissionType === 'percentage') {
-            commissionValue = (totalAmount * commissionRate) / 100;
+            commissionValue = (servicesTotal * commissionRate) / 100;
         } else {
             commissionValue = commissionRate; // Valor fixo
         }

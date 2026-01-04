@@ -38,20 +38,43 @@ export async function POST() {
 
         if (salesErrorSales && salesErrorSales.length > 0) {
             // Get all barbers map
-            const { data: barbers } = await supabaseAdmin.from('barbers').select('id, commission_percentage');
-            const barberMap = new Map(barbers?.map(b => [b.id, b.commission_percentage]) || []);
+            const { data: barbers } = await supabaseAdmin.from('barbers').select('id, user_id');
+            const barberUserMap = new Map(barbers?.map(b => [b.id, b.user_id]) || []);
+
+            // Get commission rates from users
+            const { data: users } = await supabaseAdmin.from('users').select('id, commission_value, commission_type');
+            const userCommissionMap = new Map(users?.map(u => [u.id, { rate: u.commission_value || 50, type: u.commission_type || 'percentage' }]) || []);
 
             for (const sale of salesErrorSales) {
-                if (sale.barber_id && barberMap.has(sale.barber_id)) {
-                    const rate = barberMap.get(sale.barber_id) || 0;
-                    const newComm = (sale.total_amount * rate) / 100;
+                if (sale.barber_id && barberUserMap.has(sale.barber_id)) {
+                    const userId = barberUserMap.get(sale.barber_id);
+                    const commissionInfo = userCommissionMap.get(userId!);
 
-                    if (newComm > 0) {
-                        await supabaseAdmin
-                            .from('sales')
-                            .update({ commission_value: newComm })
-                            .eq('id', sale.id);
-                        fixedCommissions++;
+                    if (commissionInfo) {
+                        // Calculate services total for this sale
+                        const { data: saleItems } = await supabaseAdmin
+                            .from('sale_items')
+                            .select('item_type, price, quantity')
+                            .eq('sale_id', sale.id);
+
+                        const servicesTotal = saleItems
+                            ?.filter(item => item.item_type === 'service')
+                            .reduce((sum, item) => sum + (item.price * item.quantity), 0) || 0;
+
+                        let newComm = 0;
+                        if (commissionInfo.type === 'percentage') {
+                            newComm = (servicesTotal * commissionInfo.rate) / 100;
+                        } else {
+                            newComm = commissionInfo.rate;
+                        }
+
+                        if (newComm > 0) {
+                            await supabaseAdmin
+                                .from('sales')
+                                .update({ commission_value: newComm })
+                                .eq('id', sale.id);
+                            fixedCommissions++;
+                        }
                     }
                 }
             }
