@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabase';
+import { supabaseAdmin } from '@/app/lib/supabase';
 import { getCurrentUserAndTenant } from '@/app/lib/utils';
 
 /**
@@ -13,16 +13,26 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
         }
 
-        const client = await supabase();
+        // Usar supabaseAdmin para by-passar RLS se necessário,
+        // garantindo a segurança pelo tenant_id abaixo
+        const client = supabaseAdmin;
 
-        // 1. Buscar a entrada da fila para saber quem é o barbeiro
+        // 1. Buscar a entrada da fila para saber quem é o barbeiro e validar tenant
         const { data: queueEntry, error: fetchError } = await client
             .from('client_queue')
-            .select('barber_id')
+            .select('id, barber_id, tenant_id, status')
             .eq('id', queueId)
             .single();
 
-        if (fetchError || !queueEntry) throw new Error('Atendimento não encontrado');
+        if (fetchError || !queueEntry) {
+            console.error('[FINISH_ERROR]', fetchError);
+            return NextResponse.json({ error: 'Atendimento não encontrado' }, { status: 404 });
+        }
+
+        // SEGURANÇA: Validar se pertence ao tenant atual
+        if (queueEntry.tenant_id !== tenant.id) {
+            return NextResponse.json({ error: 'Acesso não autorizado a este recurso' }, { status: 403 });
+        }
 
         // 2. Finalizar o atendimento
         const { error: finishError } = await client
@@ -56,6 +66,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             queueId
         });
     } catch (error: any) {
+        console.error('[FINISH_FATAL_ERROR]', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
