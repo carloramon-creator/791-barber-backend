@@ -27,46 +27,63 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-    const { id: barberId } = await params;
-    const { tenant, role } = await getCurrentUserAndTenant();
-    if (role !== 'owner') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+    try {
+        const { id: barberId } = await params;
+        const { tenant, role } = await getCurrentUserAndTenant();
+        if (role !== 'owner') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
 
-    const body = await req.json(); // { saleIds: string[], totalCommission: number, bonus?: number }
+        const body = await req.json(); // { saleIds: string[], totalCommission: number, bonus?: number }
 
-    // 1. Create a finance record (expense) FIRST to get the ID
-    const { data: financeData, error: financeError } = await supabaseAdmin
-        .from('finance')
-        .insert({
-            tenant_id: tenant.id,
-            barber_id: barberId,
-            type: 'expense',
-            description: `Fechamento Barbeiro - ID ${barberId.slice(0, 8)}`,
-            value: body.totalCommission + (body.bonus || 0),
-            date: new Date().toISOString().split('T')[0],
-            is_paid: false
-        })
-        .select()
-        .single();
+        console.log('[CLOSING] Received body:', body);
+        console.log('[CLOSING] Barber ID:', barberId);
+        console.log('[CLOSING] Tenant ID:', tenant.id);
 
-    if (financeError) throw financeError;
+        // 1. Create a finance record (expense) FIRST to get the ID
+        const { data: financeData, error: financeError } = await supabaseAdmin
+            .from('finance')
+            .insert({
+                tenant_id: tenant.id,
+                barber_id: barberId,
+                type: 'expense',
+                description: `Fechamento Barbeiro - ID ${barberId.slice(0, 8)}`,
+                value: body.totalCommission + (body.bonus || 0),
+                date: new Date().toISOString().split('T')[0],
+                is_paid: false
+            })
+            .select()
+            .single();
 
-    // 2. Mark sales as paid and link to finance record
-    const { error: updateError } = await supabaseAdmin
-        .from('sales')
-        .update({
-            barber_commission_paid: true,
-            finance_id: financeData.id // Save the link for reversion
-        })
-        .in('id', body.saleIds)
-        .eq('tenant_id', tenant.id);
+        if (financeError) {
+            console.error('[CLOSING] Finance error:', financeError);
+            throw financeError;
+        }
 
-    if (updateError) {
-        // Rollback finance if sales update fails (manual rollback since no transactions in HTTP)
-        await supabaseAdmin.from('finance').delete().eq('id', financeData.id);
-        throw updateError;
+        console.log('[CLOSING] Finance created:', financeData.id);
+
+        // 2. Mark sales as paid and link to finance record
+        const { error: updateError } = await supabaseAdmin
+            .from('sales')
+            .update({
+                barber_commission_paid: true,
+                finance_id: financeData.id // Save the link for reversion
+            })
+            .in('id', body.saleIds)
+            .eq('tenant_id', tenant.id);
+
+        if (updateError) {
+            console.error('[CLOSING] Sales update error:', updateError);
+            // Rollback finance if sales update fails (manual rollback since no transactions in HTTP)
+            await supabaseAdmin.from('finance').delete().eq('id', financeData.id);
+            throw updateError;
+        }
+
+        console.log('[CLOSING] Success! Sales updated:', body.saleIds.length);
+
+        return NextResponse.json({ success: true });
+    } catch (error: any) {
+        console.error('[CLOSING] Unexpected error:', error);
+        return NextResponse.json({ error: error.message || 'Erro desconhecido' }, { status: 500 });
     }
-
-    return NextResponse.json({ success: true });
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
