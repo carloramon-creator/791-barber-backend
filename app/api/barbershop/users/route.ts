@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     const { tenant, roles: currentUserRoles } = await getCurrentUserAndTenant();
     checkRolePermission(currentUserRoles, 'manage_users');
     const body = await req.json();
-    const { userId: existingUserId, email, name, role: requestRole, roles: requestRoles, generateInvite = false, photo_url } = body;
+    const { userId: existingUserId, email, name, nickname, role: requestRole, roles: requestRoles, generateInvite = false, photo_url } = body;
 
     let targetEmail = email?.toLowerCase();
     let userId = existingUserId;
@@ -75,6 +75,7 @@ export async function POST(req: Request) {
         tenant_id: tenant.id,
         email: targetEmail,
         name: name || targetEmail.split('@')[0],
+        nickname,
         role: primaryRole,
         roles: finalRoles,
         photo_url,
@@ -104,6 +105,7 @@ export async function POST(req: Request) {
           tenant_id: tenant.id,
           user_id: userId,
           name: name || targetEmail.split('@')[0],
+          nickname,
           photo_url: photo_url,
           avg_time_minutes: body.avg_service_time || 30,
           commission_percentage: body.commission_type === 'percentage' ? body.commission_value : 0,
@@ -158,6 +160,7 @@ export async function PUT(req: Request) {
 
     const updates: any = {
       name: body.name,
+      nickname: body.nickname,
       role: primaryRole,
       roles: finalRoles,
       photo_url: body.photo_url,
@@ -187,6 +190,7 @@ export async function PUT(req: Request) {
         tenant_id: tenant.id,
         user_id: body.id,
         name: data.name,
+        nickname: data.nickname,
         photo_url: data.photo_url,
         avg_time_minutes: data.avg_service_time || 30,
         commission_percentage: data.commission_type === 'percentage' ? data.commission_value : 0,

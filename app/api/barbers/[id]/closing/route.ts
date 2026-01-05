@@ -23,18 +23,63 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     if (salesError) throw salesError;
 
-    // Fetch Barber Info with User Name
+    // Fetch sale_items for these sales
+    if (sales && sales.length > 0) {
+        const saleIds = sales.map(s => s.id);
+        const { data: items } = await supabaseAdmin
+            .from('sale_items')
+            .select('*')
+            .in('sale_id', saleIds);
+
+        const productIds = items?.filter(i => i.item_type === 'product').map(i => i.item_id) || [];
+        const serviceIds = items?.filter(i => i.item_type === 'service').map(i => i.item_id) || [];
+
+        const [productsData, servicesData] = await Promise.all([
+            productIds.length > 0
+                ? supabaseAdmin.from('products').select('id, name').in('id', productIds)
+                : Promise.resolve({ data: [] }),
+            serviceIds.length > 0
+                ? supabaseAdmin.from('services').select('id, name').in('id', serviceIds)
+                : Promise.resolve({ data: [] })
+        ]);
+
+        const productsMap = new Map(productsData.data?.map(p => [p.id, p]) || []);
+        const servicesMap = new Map(servicesData.data?.map(s => [s.id, s]) || []);
+
+        for (const sale of sales) {
+            const saleItems = items?.filter(i => i.sale_id === sale.id) || [];
+            (sale as any).sale_items = saleItems.map(item => ({
+                ...item,
+                products: item.item_type === 'product' ? productsMap.get(item.item_id) : null,
+                services: item.item_type === 'service' ? servicesMap.get(item.item_id) : null
+            }));
+        }
+    }
+
+    // Fetch Barber Info with User Name and Nickname
     const { data: barberData } = await supabaseAdmin
         .from('barbers')
-        .select('name, users(name)')
+        .select('name, nickname, commission_percentage, users(name, nickname, commission_value)')
         .eq('id', id)
         .single();
 
-    const realName = (barberData?.users as any)?.name || barberData?.name || 'Profissional';
+    const uName = (barberData?.users as any)?.name;
+    const uNickname = (barberData?.users as any)?.nickname;
+    const uComm = (barberData?.users as any)?.commission_value;
+    const bComm = (barberData as any)?.commission_percentage;
+
+    // Final commission %
+    const commPerc = uComm !== undefined ? uComm : (bComm || 0);
+
+    const baseName = uName || barberData?.name || 'Profissional';
+    const nick = uNickname || barberData?.nickname;
+
+    const realName = nick ? `${baseName} (${nick})` : baseName;
 
     return NextResponse.json({
         sales: sales || [],
-        barberName: realName
+        barberName: realName,
+        commissionPercentage: commPerc
     });
 }
 

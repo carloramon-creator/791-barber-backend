@@ -89,6 +89,7 @@ export async function GET() {
             return {
                 barber_id: barber.id,
                 barber_name: barber.name,
+                barber_nickname: barber.nickname,
                 photo_url: barber.photo_url,
                 status: realStatus,
                 is_active: barber.is_active,
