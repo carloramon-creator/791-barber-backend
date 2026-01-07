@@ -21,11 +21,31 @@ export async function POST(req: Request) {
             return addCorsHeaders(req, NextResponse.json({ error: 'Não autenticado' }, { status: 401 }));
         }
 
-        const { plan } = await req.json();
-        const amount = PLAN_PRICES[plan];
+        const { plan, coupon } = await req.json();
+        let amount = PLAN_PRICES[plan];
 
         if (!amount) {
             return addCorsHeaders(req, NextResponse.json({ error: 'Plano inválido' }, { status: 400 }));
+        }
+
+        // Process Coupon
+        let discount = 0;
+        if (coupon) {
+            const { data: couponData } = await supabaseAdmin
+                .from('system_coupons')
+                .select('*')
+                .eq('code', coupon.toUpperCase())
+                .eq('is_active', true)
+                .single();
+
+            if (couponData) {
+                if (couponData.discount_percent) {
+                    discount = amount * (couponData.discount_percent / 100);
+                } else if (couponData.discount_value) {
+                    discount = couponData.discount_value;
+                }
+                amount = Math.max(0, amount - discount);
+            }
         }
 
         const inter = await getSystemInterClient();

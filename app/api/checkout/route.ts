@@ -21,12 +21,27 @@ export async function POST(req: Request) {
 
         // Parse do body
         const body = await req.json();
-        const { plan } = body as { plan: StripePlan };
+        const { plan, coupon } = body as { plan: StripePlan; coupon?: string };
 
         if (!plan || !(plan in STRIPE_PRICE_IDS)) {
             return addCorsHeaders(req,
                 NextResponse.json({ error: 'Plano inválido' }, { status: 400 })
             );
+        }
+
+        // Processar cupom para trial extra
+        let trialDays = 0;
+        if (coupon) {
+            const { data: couponData } = await supabaseAdmin
+                .from('system_coupons')
+                .select('*')
+                .eq('code', coupon.toUpperCase())
+                .eq('is_active', true)
+                .single();
+
+            if (couponData && couponData.trial_days) {
+                trialDays = couponData.trial_days;
+            }
         }
 
         const priceId = STRIPE_PRICE_IDS[plan];
@@ -81,6 +96,7 @@ export async function POST(req: Request) {
                     tenant_id: tenant.id,
                     plan: plan,
                 },
+                ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
             },
         });
 
