@@ -14,11 +14,10 @@ interface InterConfig {
 }
 
 export class InterAPI {
-    // We will resolve this IP dynamically to avoid DNS issues
-    private host = 'cdp.inter.co';
-    private baseUrl = `https://${this.host}/pix/v2`;
-    private billingUrl = `https://${this.host}/cobranca/v3/cobrancas`;
-    private authUrl = `https://${this.host}/oauth/v2/token`;
+    // Hardcoded URLs to prevent string corruption
+    private baseUrl = 'https://cdp.inter.co/pix/v2';
+    private billingUrl = 'https://cdp.inter.co/cobranca/v3/cobrancas';
+    private authUrl = 'https://cdp.inter.co/oauth/v2/token';
 
     // ... existing properties
     private config: InterConfig;
@@ -38,17 +37,6 @@ export class InterAPI {
         });
     }
 
-    // Helper to resolve IP if DNS fails
-    private async resolveHost() {
-        try {
-            const { address } = await lookup(this.host);
-            console.log(`[DNS] Resolved ${this.host} to ${address}`);
-            return address;
-        } catch (e) {
-            console.error(`[DNS] Failed to resolve ${this.host}`, e);
-            return null; // Let axios try natively
-        }
-    }
 
 
     async getAccessToken(): Promise<string> {
