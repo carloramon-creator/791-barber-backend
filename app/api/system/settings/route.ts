@@ -33,6 +33,7 @@ export async function GET(req: Request) {
                 pix_key: dbSettings.inter_config?.pix_key || process.env.INTER_PIX_KEY || '',
                 crt: dbSettings.inter_config?.crt || '',
                 key: dbSettings.inter_config?.key || '',
+                ca_crt: dbSettings.inter_config?.ca_crt || '',
             }
         };
 

@@ -147,3 +147,31 @@ export async function getInterClient(tenantId: string) {
         key: tenant.inter_key_content
     });
 }
+
+export async function getSystemInterClient() {
+    const { data, error } = await supabaseAdmin
+        .from('system_settings')
+        .select('*')
+        .eq('key', 'inter_config')
+        .single();
+
+    const config = data?.value;
+
+    if (!config || !config.client_id) {
+        // Fallback to env
+        if (!process.env.INTER_CLIENT_ID) return null;
+        return new InterAPI({
+            clientId: process.env.INTER_CLIENT_ID,
+            clientSecret: process.env.INTER_CLIENT_SECRET || '',
+            cert: process.env.INTER_CERT_CONTENT || '',
+            key: process.env.INTER_KEY_CONTENT || ''
+        });
+    }
+
+    return new InterAPI({
+        clientId: config.client_id,
+        clientSecret: config.client_secret,
+        cert: config.crt,
+        key: config.key
+    });
+}
