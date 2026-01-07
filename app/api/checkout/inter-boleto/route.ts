@@ -149,18 +149,16 @@ export async function POST(req: Request) {
             console.error('[SAAS BOLETO INTER ERROR DETAILS]', JSON.stringify(interError));
             return addCorsHeaders(req, NextResponse.json({ error: `Erro Inter: ${interError.message}` }, { status: 500 }));
         }
-        linhaDigitavel: interBoleto.linhaDigitavel,
-            pdfUrl: `https://api.791barber.com/api/checkout/inter-boleto/pdf?nossoNumero=${interBoleto.nossoNumero}`
-    }));
 
-} catch (error: any) {
-    console.error('[SAAS BOLETO CHECKOUT ERROR]', error);
 
-    let msg = error.message;
-    if (msg.includes('Inter Billing Error')) {
-        msg = "Erro no Banco Inter: Verifique se os dados da barbearia (Endereço/CPF/CNPJ) estão corretos.";
+    } catch (error: any) {
+        console.error('[SAAS BOLETO CHECKOUT ERROR]', error);
+
+        let msg = error.message;
+        if (msg.includes('Inter Billing Error')) {
+            msg = "Erro no Banco Inter: Verifique se os dados da barbearia (Endereço/CPF/CNPJ) estão corretos.";
+        }
+
+        return addCorsHeaders(req, NextResponse.json({ error: msg }, { status: 500 }));
     }
-
-    return addCorsHeaders(req, NextResponse.json({ error: msg }, { status: 500 }));
-}
 }
