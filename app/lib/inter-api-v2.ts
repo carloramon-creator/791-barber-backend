@@ -62,6 +62,7 @@ export class InterAPIV2 {
         const url = 'https://cdp.inter.co/cobranca/v3/cobrancas';
 
         console.log('[INTER V2] Creating Billing at:', url);
+        console.log('[INTER V2] Payload:', JSON.stringify(payload, null, 2));
 
         try {
             const response = await axios.post(url, payload, {
@@ -72,10 +73,22 @@ export class InterAPIV2 {
                 httpsAgent: this.getAgent()
             });
 
+            console.log('[INTER V2] Billing Success:', JSON.stringify(response.data));
             return response.data;
         } catch (error: any) {
             console.error('[INTER V2] Billing Error:', error.message);
-            throw new Error(`Inter Billing Error: ${JSON.stringify(error.response?.data || error.message)}`);
+            console.error('[INTER V2] Error Response:', JSON.stringify(error.response?.data, null, 2));
+            console.error('[INTER V2] Error Status:', error.response?.status);
+            console.error('[INTER V2] Error Headers:', JSON.stringify(error.response?.headers, null, 2));
+
+            const errorDetails = {
+                message: error.message,
+                status: error.response?.status,
+                data: error.response?.data,
+                url: url
+            };
+
+            throw new Error(`Inter Billing Error: ${JSON.stringify(errorDetails)}`);
         }
     }
 }
