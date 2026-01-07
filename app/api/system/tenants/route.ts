@@ -9,23 +9,24 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
         }
 
-        // Buscar todos os tenants
+        // Buscar todos os tenants e seus usuários
         const { data: tenants, error: tenantsError } = await supabaseAdmin
             .from('tenants')
             .select(`
                 *,
-                owner:users!inner(*)
-            `)
-            .eq('users.role', 'owner'); // Simplificação: assume que dono tem role owner e tenant_id
+                users(*)
+            `);
 
         if (tenantsError) throw tenantsError;
 
-        // Para cada tenant, buscar as estatísticas via RPC ou query separada
-        const tenantsWithStats = await Promise.all(tenants.map(async (tenant) => {
+        // Processar para identificar o dono (owner) e adicionar estatísticas
+        const tenantsWithStats = await Promise.all(tenants.map(async (tenant: any) => {
+            const owner = tenant.users?.find((u: any) => u.role === 'owner') || tenant.users?.[0];
             const { data: stats } = await supabaseAdmin.rpc('get_tenant_stats', { tenant_uuid: tenant.id });
 
             return {
                 ...tenant,
+                owner: owner ? [owner] : [], // Manter formato de array para compatibilidade com o frontend
                 stats: stats || {
                     total_attendances: 0,
                     total_users: 0,

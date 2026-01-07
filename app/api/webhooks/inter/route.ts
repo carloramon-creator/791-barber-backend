@@ -66,6 +66,18 @@ export async function POST(req: Request) {
                     .eq('id', charge.tenant_id);
 
                 console.log(`[INTER WEBHOOK] Tenant ${charge.tenant_id} atualizado para o plano ${charge.plan}`);
+
+                // 4. Registrar faturamento no financeiro global (SaaS)
+                await supabaseAdmin
+                    .from('finance')
+                    .insert({
+                        tenant_id: null,
+                        type: 'revenue',
+                        value: charge.amount,
+                        description: `Assinatura SaaS - Plano ${charge.plan} (Pix Inter)`,
+                        date: new Date().toISOString().split('T')[0],
+                        is_paid: true
+                    });
             }
         }
 

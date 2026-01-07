@@ -96,6 +96,21 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         .eq('status', 'active');
 
     console.log('[STRIPE] Tenant atualizado:', tenantId);
+
+    // Registrar faturamento no financeiro global (SaaS)
+    const amount = session.amount_total ? session.amount_total / 100 : 0;
+    if (amount > 0) {
+        await supabaseAdmin
+            .from('finance')
+            .insert({
+                tenant_id: null,
+                type: 'revenue',
+                value: amount,
+                description: `Assinatura SaaS - Plano ${plan} (Stripe)`,
+                date: new Date().toISOString().split('T')[0],
+                is_paid: true
+            });
+    }
 }
 
 async function handleSubscriptionChange(subscription: Stripe.Subscription) {
