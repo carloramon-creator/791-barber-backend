@@ -27,6 +27,17 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Nenhuma barbearia encontrada' }, { status: 404 });
         }
 
+        // 0. Buscar dados do Tenant (Branding)
+        const { data: tenant, error: tenantError } = await supabaseAdmin
+            .from('tenants')
+            .select('name, logo_url')
+            .eq('id', tenantId)
+            .single();
+
+        if (tenantError || !tenant) {
+            return NextResponse.json({ error: 'Barbearia não encontrada' }, { status: 404 });
+        }
+
         // 1. Médias dinâmicas
         const dynamicAverages = await getDynamicBarberAverages(tenantId);
 
@@ -61,7 +72,7 @@ export async function GET(req: Request) {
         if (queueError) throw queueError;
 
         // 3. Consolidar os dados
-        const consolidated = activeBarbers.map(barber => {
+        const consolidatedBarbers = activeBarbers.map(barber => {
             const barberQueue = allQueueItems?.filter(q => q.barber_id === barber.id) || [];
             const attendingItem = barberQueue.find(q => q.status === 'attending');
             const waitingItems = barberQueue.filter(q => q.status === 'waiting');
@@ -117,7 +128,13 @@ export async function GET(req: Request) {
             };
         }) || [];
 
-        return NextResponse.json(consolidated);
+        return NextResponse.json({
+            barbers: consolidatedBarbers,
+            tenant: {
+                name: tenant.name,
+                logo_url: tenant.logo_url
+            }
+        });
     } catch (error: any) {
         console.error('[PUBLIC QUEUE ERROR]', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
