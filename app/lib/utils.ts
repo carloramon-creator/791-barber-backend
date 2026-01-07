@@ -192,16 +192,11 @@ export function getStatusColor(status: string) {
 export function addCorsHeaders(req: Request, response: NextResponse) {
     const origin = req.headers.get('origin');
 
-    const isAllowed = origin && (
-        origin.endsWith('791barber.com') ||
-        origin.endsWith('vercel.app') ||
-        origin.startsWith('http://localhost')
-    );
-
-    if (isAllowed) {
-        response.headers.set('Access-Control-Allow-Origin', origin!);
+    // Permissive CORS for debugging, but still respecting credentials
+    if (origin) {
+        response.headers.set('Access-Control-Allow-Origin', origin);
     } else {
-        response.headers.set('Access-Control-Allow-Origin', 'https://791barber.com');
+        response.headers.set('Access-Control-Allow-Origin', '*');
     }
 
     response.headers.set('Access-Control-Allow-Credentials', 'true');
