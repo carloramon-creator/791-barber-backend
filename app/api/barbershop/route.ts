@@ -42,7 +42,13 @@ export async function PUT(req: Request) {
             bank_account: body.bank_account || body.conta,
             bank_account_digit: body.bank_account_digit || body.digito,
             bank_account_holder: body.bank_account_holder || body.titular,
-            bank_account_doc: body.bank_account_doc || body.cpf_cnpj_conta
+            bank_account_doc: body.bank_account_doc || body.cpf_cnpj_conta,
+            // Banco Inter API
+            inter_client_id: body.inter_client_id,
+            inter_client_secret: body.inter_client_secret,
+            inter_cert_content: body.inter_cert_content,
+            inter_key_content: body.inter_key_content,
+            inter_pix_key: body.inter_pix_key
         };
 
         // Limpeza de campos vazios ou undefined
