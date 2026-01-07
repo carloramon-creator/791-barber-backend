@@ -206,8 +206,8 @@ export async function getSystemInterClient() {
         return new InterAPI({
             clientId: process.env.INTER_CLIENT_ID,
             clientSecret: process.env.INTER_CLIENT_SECRET || '',
-            cert: process.env.INTER_CERT_CONTENT || '',
-            key: process.env.INTER_KEY_CONTENT || ''
+            cert: (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n'),
+            key: (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n')
         });
     }
 
