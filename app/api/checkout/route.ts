@@ -190,7 +190,6 @@ export async function POST(req: Request) {
                 metadata: {
                     tenant_id: tenant.id,
                     plan: plan,
-                    coupon: couponApplied || 'none'
                 },
                 ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
                 ...(stripeCouponId ? { discounts: [{ coupon: stripeCouponId }] } : {}),
