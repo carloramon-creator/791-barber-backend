@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserAndTenant, addCorsHeaders } from '@/app/lib/utils';
 import { supabaseAdmin } from '@/app/lib/supabase';
-import { getSystemInterClient } from '@/app/lib/inter-api';
+import { InterAPIV2 } from '@/app/lib/inter-api-v2';
 
 export async function OPTIONS(req: Request) {
     const response = new NextResponse(null, { status: 200 });
@@ -30,7 +30,6 @@ export async function POST(req: Request) {
 
         // 1. Processar Cupom
         let discount = 0;
-        let extraDays = 0;
         let couponApplied = null;
 
         if (coupon && coupon.trim() !== '') {
@@ -42,61 +41,55 @@ export async function POST(req: Request) {
                 .eq('is_active', true)
                 .single();
 
-            if (!couponData) {
+            if (couponData) {
+                // Verificar limite de uso e validade se necessário...
+                // Por enquanto, lógica simplificada
+                couponApplied = code;
+                if (couponData.discount_percent) {
+                    discount = (amount * Number(couponData.discount_percent)) / 100;
+                } else if (couponData.discount_value) {
+                    discount = Number(couponData.discount_value);
+                }
+            } else {
                 return addCorsHeaders(req,
                     NextResponse.json({ error: 'Cupom inválido ou expirado' }, { status: 400 })
                 );
             }
-
-            couponApplied = couponData.code;
-            if (couponData.discount_percent) {
-                discount = amount * (Number(couponData.discount_percent) / 100);
-            } else if (couponData.discount_value) {
-                discount = Number(couponData.discount_value);
-            }
-
-            if (couponData.trial_days) {
-                extraDays = Number(couponData.trial_days);
-            }
-
-            amount = Math.max(0, amount - discount);
         }
 
-        // 2. Obter Cliente Inter
-        const inter = await getSystemInterClient();
-        if (!inter) {
-            return addCorsHeaders(req, NextResponse.json({ error: 'Pagamento via Boleto temporariamente indisponível (Configuração Inter ausente)' }, { status: 500 }));
-        }
-
-        // 3. Buscar Perfil do Usuário para obter Email e Nome
-        const { data: userProfile } = await supabaseAdmin
-            .from('users')
-            .select('email, name')
-            .eq('id', user.id)
-            .single();
-
-        // 4. Obter Dados do Pagador (Tenant)
-        // Se o tenant não tiver cnpj/cpf_cnpj cadastrado, retornamos erro.
-        const document = (tenant.cnpj || tenant.cpf_cnpj || '').replace(/\D/g, '');
-
-        if (!document || document.length < 11) {
-            return addCorsHeaders(req, NextResponse.json({
-                error: 'Para gerar boleto, é necessário cadastrar o CPF ou CNPJ em Configurações > Barbearia.'
-            }, { status: 400 }));
-        }
-
+        amount = Math.max(0, amount - discount);
         const currentDate = new Date().toISOString().split('T')[0];
         const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + 3); // 3 dias de vencimento
+        dueDate.setDate(dueDate.getDate() + 3); // Vencimento em 3 dias
         const dueDateStr = dueDate.toISOString().split('T')[0];
 
+        // 4. Integrar com Inter (USANDO V2)
+        const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
+        const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
+
+        if (!process.env.INTER_CLIENT_ID || !cert || !key) {
+            return addCorsHeaders(req, NextResponse.json({ error: 'Configuração do Inter incompleta no servidor' }, { status: 500 }));
+        }
+
+        const inter = new InterAPIV2({
+            clientId: process.env.INTER_CLIENT_ID,
+            clientSecret: process.env.INTER_CLIENT_SECRET || '',
+            cert: cert,
+            key: key
+        });
+
+        // Garantir documento limpo
+        const doc = (tenant.document || tenant.cpf || "00000000000").replace(/\D/g, '');
+        if (doc.length < 11) {
+            return addCorsHeaders(req, NextResponse.json({ error: 'CPF/CNPJ do responsável inválido. Verifique suas configurações.' }, { status: 400 }));
+        }
+
         const payload = {
-            numDiasAgendaRecebimento: 30,
+            seuNumero: `SUB-${tenant.id.substring(0, 8)}-${Date.now()}`,
             pagador: {
-                cpfCnpj: document,
-                nome: tenant.name.slice(0, 100),
-                email: userProfile?.email || "pagamento@791barber.com",
-                tipoPessoa: document.length > 11 ? "JURIDICA" : "FISICA",
+                cpfCnpj: doc,
+                tipoPessoa: doc.length > 11 ? "JURIDICA" : "FISICA",
+                nome: tenant.name.substring(0, 100),
                 cep: tenant.address_zip?.replace(/\D/g, '') || tenant.cep?.replace(/\D/g, '') || "00000000",
                 numero: tenant.number || "SN",
                 endereco: tenant.street || tenant.address_street || "Endereço não informado",
@@ -113,52 +106,40 @@ export async function POST(req: Request) {
             }
         };
 
-        try {
-            console.log('[SAAS BOLETO] Criando cobrança no Inter...');
-            console.log('[SAAS BOLETO] Payload:', JSON.stringify(payload, null, 2));
-            const interBoleto = await inter.createBilling(payload);
-            console.log('[SAAS BOLETO] Resposta Inter:', JSON.stringify(interBoleto));
+        console.log('[SAAS BOLETO] Criando cobrança no Inter...');
+        console.log('[SAAS BOLETO PAYLOAD]', JSON.stringify(payload));
 
-            // 5. Salvar registro local (opcional, mas recomendado para tracking)
-            await supabaseAdmin
-                .from('finance')
-                .insert({
-                    tenant_id: null,
-                    type: 'revenue',
-                    value: amount,
-                    description: `Boleto SaaS Pendente - Plano ${plan} (${tenant.name})`,
-                    date: currentDate,
-                    is_paid: false,
-                    metadata: {
-                        nosso_numero: interBoleto.nossoNumero,
-                        txid: interBoleto.txid,
-                        tenant_id: tenant.id
-                    }
-                });
+        const interBoleto = await inter.createBilling(payload);
+        console.log('[SAAS BOLETO] Resposta Inter:', JSON.stringify(interBoleto));
 
-            return addCorsHeaders(req, NextResponse.json({
-                success: true,
-                nossoNumero: interBoleto.nossoNumero, // Keep consistent structure
-                codigoBarras: interBoleto.codigoBarras, // Keep consistent structure
-                linhaDigitavel: interBoleto.linhaDigitavel,
-                // Use Proxy URL to avoid CORS/Auth issues on frontend
-                pdfUrl: `${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://api.791barber.com'}/api/checkout/inter-boleto/pdf?nossoNumero=${interBoleto.nossoNumero}`
-            }));
-        } catch (interError: any) {
-            console.error('[SAAS BOLETO INTER ERROR]', interError);
-            console.error('[SAAS BOLETO INTER ERROR DETAILS]', JSON.stringify(interError));
-            return addCorsHeaders(req, NextResponse.json({ error: `Erro Inter: ${interError.message}` }, { status: 500 }));
-        }
+        // 5. Salvar registro local
+        await supabaseAdmin
+            .from('finance')
+            .insert({
+                tenant_id: null,
+                type: 'revenue',
+                value: amount,
+                description: `Boleto SaaS Pendente - Plano ${plan} (${tenant.name})`,
+                date: currentDate,
+                is_paid: false,
+                metadata: {
+                    nosso_numero: interBoleto.nossoNumero,
+                    txid: interBoleto.codigoSolicitacao || interBoleto.txid || 'N/A',
+                    tenant_id: tenant.id
+                }
+            });
 
+        return addCorsHeaders(req, NextResponse.json({
+            success: true,
+            nossoNumero: interBoleto.nossoNumero,
+            codigoBarras: interBoleto.codigoBarras,
+            linhaDigitavel: interBoleto.linhaDigitavel,
+            // Usando o PDF direto do Inter se possível, ou construindo proxy
+            pdfUrl: `${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://api.791barber.com'}/api/checkout/inter-boleto/pdf?nossoNumero=${interBoleto.nossoNumero}`
+        }));
 
     } catch (error: any) {
         console.error('[SAAS BOLETO CHECKOUT ERROR]', error);
-
-        let msg = error.message;
-        if (msg.includes('Inter Billing Error')) {
-            msg = "Erro no Banco Inter: Verifique se os dados da barbearia (Endereço/CPF/CNPJ) estão corretos.";
-        }
-
-        return addCorsHeaders(req, NextResponse.json({ error: msg }, { status: 500 }));
+        return addCorsHeaders(req, NextResponse.json({ error: error.message }, { status: 500 }));
     }
 }
