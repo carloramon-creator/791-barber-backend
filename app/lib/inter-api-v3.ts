@@ -67,11 +67,11 @@ export class InterAPIV3 {
 
         const body = params.toString();
 
-        console.log('[INTER V3] Requesting Token from: https://cdp.inter.co/oauth/v2/token');
+        console.log('[INTER V3] Requesting Token from: https://cdpj.partners.bancointer.com.br/oauth/v2/token');
 
         try {
             const options: https.RequestOptions = {
-                hostname: 'cdp.inter.co',
+                hostname: 'cdpj.partners.bancointer.com.br',
                 port: 443,
                 path: '/oauth/v2/token',
                 method: 'POST',
@@ -107,7 +107,7 @@ export class InterAPIV3 {
 
         try {
             const options: https.RequestOptions = {
-                hostname: 'cdp.inter.co',
+                hostname: 'cdpj.partners.bancointer.com.br',
                 port: 443,
                 path: '/cobranca/v3/cobrancas',
                 method: 'POST',
