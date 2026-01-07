@@ -70,6 +70,7 @@ export async function POST(req: Request) {
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     const tenantId = session.metadata?.tenant_id;
     const plan = session.metadata?.plan;
+    const couponId = session.metadata?.coupon_id;
 
     if (!tenantId || !plan) {
         console.error('[STRIPE] Metadata faltando no checkout:', session.id);
@@ -96,6 +97,34 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         .eq('status', 'active');
 
     console.log('[STRIPE] Tenant atualizado:', tenantId);
+
+    // Registrar uso do cupom, se aplicável
+    if (couponId && couponId !== 'null') {
+        try {
+            // Calcular desconto aplicado
+            const totalDiscount = session.total_details?.amount_discount || 0;
+            const discountApplied = totalDiscount / 100; // Converter de centavos para reais
+
+            // Registrar uso do cupom
+            await supabaseAdmin
+                .from('system_coupon_usage')
+                .insert({
+                    coupon_id: couponId,
+                    tenant_id: tenantId,
+                    stripe_session_id: session.id,
+                    stripe_subscription_id: session.subscription as string,
+                    plan: plan,
+                    discount_applied: discountApplied
+                });
+
+            // Incrementar contador de usos
+            await supabaseAdmin.rpc('increment_coupon_usage', { coupon_uuid: couponId });
+
+            console.log('[STRIPE] Uso do cupom registrado:', couponId);
+        } catch (error) {
+            console.error('[STRIPE] Erro ao registrar uso do cupom:', error);
+        }
+    }
 
     // Registrar faturamento no financeiro global (SaaS)
     const amount = session.amount_total ? session.amount_total / 100 : 0;

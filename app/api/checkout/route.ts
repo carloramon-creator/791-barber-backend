@@ -44,7 +44,8 @@ export async function POST(req: Request) {
         let couponData: any = null;
 
         if (coupon && coupon.trim() !== '') {
-            const { data } = await supabaseAdmin
+            // 1. Buscar cupom
+            const { data, error: couponError } = await supabaseAdmin
                 .from('system_coupons')
                 .select('*')
                 .eq('code', coupon.trim().toUpperCase())
@@ -53,9 +54,40 @@ export async function POST(req: Request) {
 
             couponData = data;
 
-            if (!couponData) {
+            if (!couponData || couponError) {
                 return addCorsHeaders(req,
                     NextResponse.json({ error: 'Cupom inválido ou expirado' }, { status: 400 })
+                );
+            }
+
+            // 2. Validar expiração
+            if (couponData.expires_at) {
+                const expiresAt = new Date(couponData.expires_at);
+                if (expiresAt < new Date()) {
+                    return addCorsHeaders(req,
+                        NextResponse.json({ error: 'Este cupom já expirou' }, { status: 400 })
+                    );
+                }
+            }
+
+            // 3. Validar limite de usos
+            if (couponData.max_uses && couponData.current_uses >= couponData.max_uses) {
+                return addCorsHeaders(req,
+                    NextResponse.json({ error: 'Este cupom atingiu o limite de usos' }, { status: 400 })
+                );
+            }
+
+            // 4. Verificar se o tenant já usou este cupom
+            const { data: previousUsage } = await supabaseAdmin
+                .from('system_coupon_usage')
+                .select('id')
+                .eq('coupon_id', couponData.id)
+                .eq('tenant_id', tenant.id)
+                .single();
+
+            if (previousUsage) {
+                return addCorsHeaders(req,
+                    NextResponse.json({ error: 'Você já utilizou este cupom anteriormente' }, { status: 400 })
                 );
             }
 
@@ -184,7 +216,8 @@ export async function POST(req: Request) {
             metadata: {
                 tenant_id: tenant.id,
                 plan: plan,
-                coupon: couponApplied || 'none'
+                coupon: couponApplied || 'none',
+                coupon_id: couponData?.id || null
             },
             subscription_data: {
                 metadata: {

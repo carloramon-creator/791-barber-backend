@@ -6,6 +6,7 @@ interface InterConfigV2 {
     clientSecret: string;
     cert: string;
     key: string;
+    environment?: 'sandbox' | 'production'; // Default: production
 }
 
 export class InterAPIV2 {
@@ -30,6 +31,21 @@ export class InterAPIV2 {
                 dns.lookup(hostname, { family: 4, all: false }, callback);
             }
         });
+    }
+
+    private getBaseUrl(): string {
+        const env = this.config.environment || 'production';
+        return env === 'sandbox'
+            ? 'https://cdpj-sandbox.partners.bancointer.com.br'
+            : 'https://cdp.inter.co';
+    }
+
+    private getTokenUrl(): string {
+        return `${this.getBaseUrl()}/oauth/v2/token`;
+    }
+
+    private getBillingUrl(): string {
+        return `${this.getBaseUrl()}/cobranca/v3/cobrancas`;
     }
 
     async getAccessToken(): Promise<string> {
