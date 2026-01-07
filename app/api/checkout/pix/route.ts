@@ -56,7 +56,9 @@ export async function POST(req: Request) {
                 amount = Math.max(0, amount - discount);
                 console.log(`[CHECKOUT PIX] Final: ${amount}`);
             } else {
-                console.log(`[CHECKOUT PIX] Not found: ${code}`);
+                return addCorsHeaders(req,
+                    NextResponse.json({ error: 'Cupom inválido ou expirado' }, { status: 400 })
+                );
             }
         }
 

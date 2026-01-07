@@ -35,12 +35,13 @@ export async function POST(req: Request) {
             );
         }
 
-        // 1. Calcular Valor com Desconto (Lógica Própria)
+        // 1. Validar e Calcular Valor com Cupom
         let baseAmount = PLAN_BASE_PRICES[plan];
         let finalAmount = baseAmount;
         let trialDays = 0;
+        let couponApplied = null;
 
-        if (coupon) {
+        if (coupon && coupon.trim() !== '') {
             const { data: couponData } = await supabaseAdmin
                 .from('system_coupons')
                 .select('*')
@@ -48,19 +49,24 @@ export async function POST(req: Request) {
                 .eq('is_active', true)
                 .single();
 
-            if (couponData) {
-                const discountPercent = couponData.discount_percent ? Number(couponData.discount_percent) : 0;
-                const discountValue = couponData.discount_value ? Number(couponData.discount_value) : 0;
-                trialDays = couponData.trial_days ? Number(couponData.trial_days) : 0;
-
-                if (discountPercent > 0) {
-                    finalAmount = baseAmount * (1 - discountPercent / 100);
-                } else if (discountValue > 0) {
-                    finalAmount = Math.max(0, baseAmount - discountValue);
-                }
-
-                console.log(`[STRIPE CHECKOUT] Dinâmico - Plano: ${plan}, Valor Base: R$${baseAmount}, Final: R$${finalAmount}, Trial: ${trialDays}d`);
+            if (!couponData) {
+                return addCorsHeaders(req,
+                    NextResponse.json({ error: 'Cupom inválido ou expirado' }, { status: 400 })
+                );
             }
+
+            couponApplied = couponData.code;
+            const discountPercent = couponData.discount_percent ? Number(couponData.discount_percent) : 0;
+            const discountValue = couponData.discount_value ? Number(couponData.discount_value) : 0;
+            trialDays = couponData.trial_days ? Number(couponData.trial_days) : 0;
+
+            if (discountPercent > 0) {
+                finalAmount = baseAmount * (1 - discountPercent / 100);
+            } else if (discountValue > 0) {
+                finalAmount = Math.max(0, baseAmount - discountValue);
+            }
+
+            console.log(`[STRIPE CHECKOUT] Cupom ${couponApplied} aplicado. Valor final: R$${finalAmount}`);
         }
 
         // 2. Buscar ou criar Customer no Stripe
@@ -89,8 +95,7 @@ export async function POST(req: Request) {
                 .eq('id', tenant.id);
         }
 
-        // 3. Criar Checkout Session ÚNICA (Sem depender de IDs de produtos no Dashboard)
-        // Usamos price_data para mandar o valor, recorrência e nome na hora.
+        // 3. Criar Checkout Session Dinâmica
         const session = await stripe.checkout.sessions.create({
             customer: customerId,
             payment_method_types: ['card', 'boleto'],
@@ -100,9 +105,9 @@ export async function POST(req: Request) {
                         currency: 'brl',
                         product_data: {
                             name: `791 Barber - Plano ${plan.charAt(0).toUpperCase() + plan.slice(1)}`,
-                            description: coupon ? `Cupom ${coupon.toUpperCase()} aplicado` : 'Assinatura Mensal da Plataforma',
+                            description: couponApplied ? `Cupom ${couponApplied} aplicado (Desconto de R$ ${(baseAmount - finalAmount).toFixed(2)})` : 'Assinatura Mensal da Plataforma',
                         },
-                        unit_amount: Math.round(finalAmount * 100), // Converte para centavos
+                        unit_amount: Math.round(finalAmount * 100),
                         recurring: {
                             interval: 'month',
                         },
@@ -116,17 +121,19 @@ export async function POST(req: Request) {
             metadata: {
                 tenant_id: tenant.id,
                 plan: plan,
+                coupon: couponApplied || 'none'
             },
             subscription_data: {
                 metadata: {
                     tenant_id: tenant.id,
                     plan: plan,
+                    coupon: couponApplied || 'none'
                 },
                 ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
             },
         });
 
-        console.log('[STRIPE CHECKOUT] Session Dinâmica criada:', session.id, 'Valor:', finalAmount);
+        console.log('[STRIPE CHECKOUT] Session Criada:', session.id, 'Metadata Coupon:', couponApplied);
 
         const response = NextResponse.json({
             sessionId: session.id,
