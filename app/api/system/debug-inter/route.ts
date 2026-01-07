@@ -20,8 +20,24 @@ export async function GET(req: Request) {
         // @ts-ignore
         const config = client.config;
 
+        // Perform DNS and Connectivity Test
+        let dnsResult = 'Not Tested';
+        let connectResult = 'Not Tested';
+
+        try {
+            const dns = await fetch('https://cdp.inter.co', { method: 'HEAD' }).catch(e => e.message);
+            // @ts-ignore
+            dnsResult = dns.status ? `Status: ${dns.status}` : `Error: ${dns}`;
+        } catch (e: any) {
+            dnsResult = e.message;
+        }
+
         return NextResponse.json({
             status: 'Configuration Loaded',
+            connectivity_test: {
+                target: 'https://cdp.inter.co',
+                result: dnsResult
+            },
             cert_details: {
                 length: config.cert?.length || 0,
                 starts_with_begin: config.cert?.includes('BEGIN CERTIFICATE'),
