@@ -85,24 +85,24 @@ export async function POST(req: Request) {
         }
 
         const payload = {
-            seuNumero: `SUB-${tenant.id.substring(0, 8)}-${Date.now()}`,
+            seuNumero: String(Date.now()).slice(-15), // Max 15 chars - use last 15 digits of timestamp
             pagador: {
                 cpfCnpj: doc,
                 tipoPessoa: doc.length > 11 ? "JURIDICA" : "FISICA",
                 nome: tenant.name.substring(0, 100),
-                cep: tenant.address_zip?.replace(/\D/g, '') || tenant.cep?.replace(/\D/g, '') || "00000000",
-                numero: tenant.number || "SN",
-                endereco: tenant.street || tenant.address_street || "Endereço não informado",
-                bairro: tenant.neighborhood || tenant.address_neighborhood || "Centro",
-                cidade: tenant.city || tenant.address_city || "Cidade",
-                uf: tenant.state || tenant.address_state || "SC"
+                cep: (tenant.address_zip?.replace(/\D/g, '') || tenant.cep?.replace(/\D/g, '') || "00000000").substring(0, 8),
+                numero: (tenant.number || "SN").substring(0, 10),
+                endereco: (tenant.street || tenant.address_street || "Endereço não informado").substring(0, 90),
+                bairro: (tenant.neighborhood || tenant.address_neighborhood || "Centro").substring(0, 60),
+                cidade: (tenant.city || tenant.address_city || "Cidade").substring(0, 60),
+                uf: (tenant.state || tenant.address_state || "SC").substring(0, 2)
             },
             dataVencimento: dueDateStr,
             valorNominal: amount.toFixed(2),
             dataEmissao: currentDate,
             mensagem: {
-                linha1: `Assinatura 791 Barber - Plano ${plan}`,
-                linha2: couponApplied ? `Cupom ${couponApplied} aplicado` : ""
+                linha1: `Assinatura 791 Barber - Plano ${plan}`.substring(0, 80),
+                linha2: (couponApplied ? `Cupom ${couponApplied} aplicado` : "").substring(0, 80)
             }
         };
 
