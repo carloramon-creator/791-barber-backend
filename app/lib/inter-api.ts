@@ -10,6 +10,7 @@ interface InterConfig {
 
 export class InterAPI {
     private baseUrl = 'https://cdp.inter.co/pix/v2';
+    private billingUrl = 'https://cdp.inter.co/cobranca/v3/cobrancas';
     private authUrl = 'https://cdp.inter.co/oauth/v2/token';
     private config: InterConfig;
     private accessToken: string | null = null;
@@ -35,7 +36,7 @@ export class InterAPI {
         const params = new URLSearchParams();
         params.append('client_id', this.config.clientId);
         params.append('client_secret', this.config.clientSecret);
-        params.append('scope', 'pix.read pix.write webhook.read webhook.write');
+        params.append('scope', 'pix.read pix.write webhook.read webhook.write boleto-cobranca.read boleto-cobranca.write');
         params.append('grant_type', 'client_credentials');
 
         const response = await fetch(this.authUrl, {
@@ -107,6 +108,7 @@ export class InterAPI {
     }
 
     async setupWebhook(webhookUrl: string, chave: string) {
+        // ... (existing pix webhook logic remains same)
         const token = await this.getAccessToken();
 
         const response = await fetch(`${this.baseUrl}/webhook/${chave}`, {
@@ -126,6 +128,28 @@ export class InterAPI {
         }
 
         return true;
+    }
+
+    async createBilling(payload: any) {
+        const token = await this.getAccessToken();
+
+        const response = await fetch(this.billingUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+            // @ts-ignore
+            agent: this.getAgent(),
+        } as any);
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ message: 'Unknown error' }));
+            throw new Error(`Inter Billing Error: ${JSON.stringify(error)}`);
+        }
+
+        return await response.json();
     }
 }
 
