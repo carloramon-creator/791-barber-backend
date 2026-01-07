@@ -66,8 +66,9 @@ export async function POST(req: Request) {
 
             // Generate/Find Stripe Coupon
             try {
-                // Simplistic ID generation to avoid creating duplicates (in a real scenario, check existence properly)
-                const uniqueCouponId = `COUPON-${couponApplied}-${discountPercent || discountValue}`;
+                // Remove special chars for ID safety
+                const cleanCode = couponApplied.replace(/[^a-zA-Z0-9]/g, '');
+                const uniqueCouponId = `COUPON_${cleanCode}_${discountPercent || discountValue}`; // Improved ID format
 
                 try {
                     const existing = await stripe.coupons.retrieve(uniqueCouponId);
@@ -178,7 +179,6 @@ export async function POST(req: Request) {
                 },
             ],
             mode: 'subscription',
-            ...(stripeCouponId ? { discounts: [{ coupon: stripeCouponId }] } : {}),
             success_url: `${process.env.NEXT_PUBLIC_FRONTEND_URL || 'https://791barber.com'}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.NEXT_PUBLIC_FRONTEND_URL || 'https://791barber.com'}/checkout/cancel`,
             metadata: {
@@ -193,6 +193,7 @@ export async function POST(req: Request) {
                     coupon: couponApplied || 'none'
                 },
                 ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
+                ...(stripeCouponId ? { discounts: [{ coupon: stripeCouponId }] } : {}),
             },
         });
 
