@@ -22,7 +22,8 @@ export class InterAPIV2 {
             cert: this.config.cert,
             key: this.config.key,
             keepAlive: true,
-            rejectUnauthorized: false
+            rejectUnauthorized: false,
+            family: 4 // Force IPv4 to avoid Vercel IPv6 DNS issues
         });
     }
 
