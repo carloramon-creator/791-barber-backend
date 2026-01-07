@@ -68,3 +68,4 @@ CREATE TRIGGER trg_update_stock_on_movement
 AFTER INSERT ON product_movements
 FOR EACH ROW
 EXECUTE FUNCTION update_stock_from_movement();
+mo

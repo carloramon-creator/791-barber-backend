@@ -9,7 +9,7 @@ import { findOrCreateClientByPhone } from '@/app/lib/clients';
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        const { barber_id, client_name, client_phone, tenant_id } = body;
+        const { barber_id, client_name, client_phone, tenant_id, cpf, photo_url } = body;
 
         if (!client_name || !client_phone) {
             return NextResponse.json(
@@ -39,7 +39,9 @@ export async function POST(req: Request) {
             supabaseAdmin,
             finalTenantId,
             client_name,
-            client_phone
+            client_phone,
+            cpf,
+            photo_url
         );
 
         if (!client) {

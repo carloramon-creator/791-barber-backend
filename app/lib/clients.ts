@@ -13,7 +13,9 @@ export async function findOrCreateClientByPhone(
     client: SupabaseClient,
     tenantId: string,
     name: string,
-    phone: string
+    phone: string,
+    cpf?: string,
+    photoUrl?: string
 ) {
     // 1. Tenta encontrar cliente existente
     const { data: existing, error: findError } = await client
@@ -28,12 +30,16 @@ export async function findOrCreateClientByPhone(
     }
 
     if (existing) {
-        // Opcional: Atualizar nome se mudou? Por enquanto mantemos o original ou atualizamos.
-        // Vamos atualizar o nome para o mais recente fornecido
-        if (existing.name !== name) {
+        // Atualizar dados se mudaram
+        const updates: any = {};
+        if (existing.name !== name) updates.name = name;
+        if (cpf && existing.cpf !== cpf) updates.cpf = cpf;
+        if (photoUrl && existing.photo_url !== photoUrl) updates.photo_url = photoUrl;
+
+        if (Object.keys(updates).length > 0) {
             const { data: updated } = await client
                 .from('clients')
-                .update({ name: name })
+                .update(updates)
                 .eq('id', existing.id)
                 .select()
                 .single();
@@ -49,6 +55,8 @@ export async function findOrCreateClientByPhone(
             tenant_id: tenantId,
             name,
             phone,
+            cpf,
+            photo_url: photoUrl
         })
         .select('*')
         .single();
