@@ -75,16 +75,11 @@ export async function POST(req: Request) {
             .eq('id', user.id)
             .single();
 
-        // 4. Preparar Payload do Boleto Inter V3
-        const { data: tenantData } = await supabaseAdmin
-            .from('tenants')
-            .select('cnpj, address_city, address_state, address_zip, address_street')
-            .eq('id', tenant.id)
-            .single();
+        // 4. Obter Dados do Pagador (Tenant)
+        // Se o tenant não tiver cnpj/cpf_cnpj cadastrado, retornamos erro.
+        const document = (tenant.cnpj || tenant.cpf_cnpj || '').replace(/\D/g, '');
 
-        const document = tenantData?.cnpj?.replace(/\D/g, '') || '';
-
-        if (!document) {
+        if (!document || document.length < 11) {
             return addCorsHeaders(req, NextResponse.json({
                 error: 'Para gerar boleto, é necessário cadastrar o CPF ou CNPJ em Configurações > Barbearia.'
             }, { status: 400 }));
@@ -102,12 +97,12 @@ export async function POST(req: Request) {
                 nome: tenant.name.slice(0, 100),
                 email: userProfile?.email || "pagamento@791barber.com",
                 tipoPessoa: document.length > 11 ? "JURIDICA" : "FISICA",
-                cep: tenantData?.address_zip?.replace(/\D/g, '') || "00000000",
-                numero: "SN",
-                endereco: tenantData?.address_street || "Endereço não informado",
-                bairro: "Centro",
-                cidade: tenantData?.address_city || "Cidade",
-                uf: tenantData?.address_state || "SC"
+                cep: tenant.address_zip?.replace(/\D/g, '') || tenant.cep?.replace(/\D/g, '') || "00000000",
+                numero: tenant.number || "SN",
+                endereco: tenant.street || tenant.address_street || "Endereço não informado",
+                bairro: tenant.neighborhood || tenant.address_neighborhood || "Centro",
+                cidade: tenant.city || tenant.address_city || "Cidade",
+                uf: tenant.state || tenant.address_state || "SC"
             },
             dataVencimento: dueDateStr,
             valorNominal: amount.toFixed(2),
