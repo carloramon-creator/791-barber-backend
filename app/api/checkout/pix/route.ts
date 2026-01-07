@@ -32,25 +32,31 @@ export async function POST(req: Request) {
         let discount = 0;
         let extraDays = 0;
         if (coupon) {
+            console.log(`[CHECKOUT PIX] Validating: ${coupon}`);
+            const code = String(coupon).trim().toUpperCase();
             const { data: couponData } = await supabaseAdmin
                 .from('system_coupons')
                 .select('*')
-                .eq('code', coupon.toUpperCase())
+                .eq('code', code)
                 .eq('is_active', true)
                 .single();
 
             if (couponData) {
+                console.log(`[CHECKOUT PIX] Found:`, couponData);
                 if (couponData.discount_percent) {
-                    discount = amount * (couponData.discount_percent / 100);
+                    discount = amount * (Number(couponData.discount_percent) / 100);
                 } else if (couponData.discount_value) {
-                    discount = couponData.discount_value;
+                    discount = Number(couponData.discount_value);
                 }
 
                 if (couponData.trial_days) {
-                    extraDays = couponData.trial_days;
+                    extraDays = Number(couponData.trial_days);
                 }
 
                 amount = Math.max(0, amount - discount);
+                console.log(`[CHECKOUT PIX] Final: ${amount}`);
+            } else {
+                console.log(`[CHECKOUT PIX] Not found: ${code}`);
             }
         }
 
