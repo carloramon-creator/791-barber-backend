@@ -96,7 +96,8 @@ export async function getCurrentUserAndTenant() {
             user,
             tenant,
             role: userData.role, // Mantendo por compatibilidade temporária
-            roles: userData.roles || [userData.role] // Novo padrão
+            roles: userData.roles || [userData.role], // Novo padrão
+            isSystemAdmin: userData.is_system_admin || false
         };
     } catch (e: any) {
         console.error('[BACKEND] Critical error in getCurrentUserAndTenant:', e.message);
