@@ -19,6 +19,10 @@ export async function GET(req: Request) {
             .from('client_queue')
             .select(`
                 *,
+                clients (
+                    photo_url,
+                    name
+                ),
                 barbers (
                     id,
                     name,
@@ -63,6 +67,8 @@ export async function GET(req: Request) {
 
         return NextResponse.json({
             ...ticket,
+            client_name: ticket.clients?.name || ticket.client_name,
+            client_photo: ticket.clients?.photo_url,
             barbers: formattedBarber,
             real_position: realPosition,
             estimated_wait_minutes: estimatedWait

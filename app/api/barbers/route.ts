@@ -20,7 +20,7 @@ export async function GET() {
             for (const user of barberUsers) {
                 const { data: existingBarber } = await supabaseAdmin
                     .from('barbers')
-                    .select('id, name, nickname')
+                    .select('id, name, nickname, photo_url')
                     .eq('tenant_id', tenant.id)
                     .eq('user_id', user.id)
                     .maybeSingle();
@@ -37,12 +37,17 @@ export async function GET() {
                         commission_percentage: user.commission_value || 0,
                         is_active: true
                     });
-                } else if (existingBarber.name !== user.name || existingBarber.nickname !== user.nickname) {
+                } else if (
+                    existingBarber.name !== user.name ||
+                    existingBarber.nickname !== user.nickname ||
+                    (user.photo_url && existingBarber.photo_url !== user.photo_url)
+                ) {
                     console.log(`[BACKEND] Updating barber info for user ${user.name}`);
                     await supabaseAdmin.from('barbers')
                         .update({
                             name: user.name,
-                            nickname: user.nickname
+                            nickname: user.nickname,
+                            photo_url: user.photo_url || existingBarber.photo_url
                         })
                         .eq('id', existingBarber.id);
                 }

@@ -14,7 +14,7 @@ export async function GET() {
         // 1. Buscar todos barbeiros do tenant
         const { data: barbers, error: barbersError } = await supabaseAdmin
             .from('barbers')
-            .select('*')
+            .select('*, users(photo_url, name, nickname)')
             .eq('tenant_id', tenant.id)
             .order('name', { ascending: true });
 
@@ -24,7 +24,7 @@ export async function GET() {
         // Ordenar por prioridade primeiro, depois por posição
         const { data: allQueueItems, error: queueError } = await supabaseAdmin
             .from('client_queue')
-            .select('*')
+            .select('*, clients(photo_url, name)')
             .eq('tenant_id', tenant.id)
             .in('status', ['waiting', 'attending'])
             .order('is_priority', { ascending: false, nullsFirst: false })
@@ -79,6 +79,8 @@ export async function GET() {
 
                 return {
                     ...q,
+                    client_name: (q as any).clients?.name || q.client_name,
+                    client_photo: (q as any).clients?.photo_url,
                     estimated_time_minutes: itemWait,
                     status_color: getStatusColor(q.status)
                 };
@@ -97,12 +99,13 @@ export async function GET() {
 
             return {
                 barber_id: barber.id,
-                barber_name: barber.name,
+                barber_name: (barber as any).users?.name || barber.name,
+                barber_nickname: (barber as any).users?.nickname || barber.nickname,
                 user_id: barber.user_id,
-                photo_url: barber.photo_url,
+                photo_url: (barber as any).users?.photo_url || barber.photo_url,
                 status: currentStatus,
                 is_active: barber.is_active,
-                avg_time_minutes: avgTime, // Retorna a média atual real
+                avg_time_minutes: avgTime,
                 queue: formattedQueue,
                 total_estimated_wait_minutes: totalEstimatedWait
             };
