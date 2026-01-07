@@ -192,8 +192,8 @@ export async function POST(req: Request) {
                     plan: plan,
                 },
                 ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
-                ...(stripeCouponId ? { discounts: [{ coupon: stripeCouponId }] } : {}),
             },
+            ...(stripeCouponId ? { discounts: [{ coupon: stripeCouponId }] } : {}),
         });
 
         console.log('[STRIPE CHECKOUT] Session Criada:', session.id, 'Coupon:', stripeCouponId);

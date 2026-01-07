@@ -23,7 +23,12 @@ export class InterAPIV2 {
             key: this.config.key,
             keepAlive: true,
             rejectUnauthorized: false,
-            family: 4 // Force IPv4 to avoid Vercel IPv6 DNS issues
+            family: 4, // Force IPv4 to avoid Vercel IPv6 DNS issues
+            lookup: (hostname, options, callback) => {
+                // Custom DNS lookup to handle Vercel DNS issues
+                const dns = require('dns');
+                dns.lookup(hostname, { family: 4, all: false }, callback);
+            }
         });
     }
 
@@ -42,8 +47,12 @@ export class InterAPIV2 {
 
         try {
             const response = await axios.post('https://cdp.inter.co/oauth/v2/token', params, {
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                httpsAgent: this.getAgent()
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Host': 'cdp.inter.co'
+                },
+                httpsAgent: this.getAgent(),
+                timeout: 30000
             });
 
             const data = response.data;
@@ -69,8 +78,10 @@ export class InterAPIV2 {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
+                    'Host': 'cdp.inter.co'
                 },
-                httpsAgent: this.getAgent()
+                httpsAgent: this.getAgent(),
+                timeout: 30000
             });
 
             console.log('[INTER V2] Billing Success:', JSON.stringify(response.data));
