@@ -22,7 +22,7 @@ export async function GET(req: Request) {
 
         // Perform DNS and Connectivity Test
         let dnsResult = 'Not Tested';
-        let connectResult = 'Not Tested';
+        let googleResult = 'Not Tested';
 
         try {
             const dns = await fetch('https://cdp.inter.co', { method: 'HEAD' }).catch(e => e.message);
@@ -32,11 +32,19 @@ export async function GET(req: Request) {
             dnsResult = e.message;
         }
 
+        try {
+            const goog = await fetch('https://www.google.com', { method: 'HEAD' }).catch(e => e.message);
+            // @ts-ignore
+            googleResult = goog.status ? `Status: ${goog.status}` : `Error: ${goog}`;
+        } catch (e: any) {
+            googleResult = e.message;
+        }
+
         return NextResponse.json({
             status: 'Configuration Loaded',
             connectivity_test: {
-                target: 'https://cdp.inter.co',
-                result: dnsResult
+                inter: { target: 'https://cdp.inter.co', result: dnsResult },
+                google: { target: 'https://google.com', result: googleResult }
             },
             cert_details: {
                 length: config.cert?.length || 0,
