@@ -41,13 +41,17 @@ export async function POST(req: Request) {
         let trialDays = 0;
         let couponApplied = null;
 
+        let couponData: any = null;
+
         if (coupon && coupon.trim() !== '') {
-            const { data: couponData } = await supabaseAdmin
+            const { data } = await supabaseAdmin
                 .from('system_coupons')
                 .select('*')
                 .eq('code', coupon.trim().toUpperCase())
                 .eq('is_active', true)
                 .single();
+
+            couponData = data;
 
             if (!couponData) {
                 return addCorsHeaders(req,
@@ -95,6 +99,55 @@ export async function POST(req: Request) {
                 .eq('id', tenant.id);
         }
 
+        // Create Stripe Coupon if applicable
+        let stripeCouponId = undefined;
+
+        if (couponApplied) {
+            try {
+                // Determine if percentage or amount off
+                const couponParams: any = {
+                    duration: 'once', // or 'repeating' if you want it monthly
+                    name: `Cupom ${couponApplied}`,
+                };
+
+                const discountPercent = couponData.discount_percent ? Number(couponData.discount_percent) : 0;
+                const discountValue = couponData.discount_value ? Number(couponData.discount_value) : 0;
+
+                // Check if coupon already exists in Stripe to avoid duplication (optional, avoiding for simplicity now)
+                // For simplicity, we create a new one-time coupon each time or use a standard naming convention
+                // Better approach: Create a unique ID based on the coupon code
+                const uniqueCouponId = `COUPON-${couponApplied}-${discountPercent || discountValue}`;
+
+                try {
+                    const existingCoupon = await stripe.coupons.retrieve(uniqueCouponId);
+                    stripeCouponId = existingCoupon.id;
+                } catch (e) {
+                    // Create if not exists
+                    if (discountPercent > 0) {
+                        const newCoupon = await stripe.coupons.create({
+                            id: uniqueCouponId,
+                            percent_off: discountPercent,
+                            duration: 'forever', // Apply to subscription forever? Or 'once'? Usually subscriptions want 'forever' or 'repeating'
+                            name: `Desconto ${couponApplied}`,
+                        });
+                        stripeCouponId = newCoupon.id;
+                    } else if (discountValue > 0) {
+                        const newCoupon = await stripe.coupons.create({
+                            id: uniqueCouponId,
+                            amount_off: Math.round(discountValue * 100),
+                            currency: 'brl',
+                            duration: 'forever',
+                            name: `Desconto ${couponApplied}`,
+                        });
+                        stripeCouponId = newCoupon.id;
+                    }
+                }
+            } catch (couponError) {
+                console.error('[STRIPE CHECKOUT] Erro ao criar cupom no Stripe:', couponError);
+                // Fallback to manual price modification if coupon creation fails is risky with subscriptions
+            }
+        }
+
         // 3. Criar Checkout Session Dinâmica
         const session = await stripe.checkout.sessions.create({
             customer: customerId,
@@ -105,9 +158,9 @@ export async function POST(req: Request) {
                         currency: 'brl',
                         product_data: {
                             name: `791 Barber - Plano ${plan.charAt(0).toUpperCase() + plan.slice(1)}`,
-                            description: couponApplied ? `Cupom ${couponApplied} aplicado (Desconto de R$ ${(baseAmount - finalAmount).toFixed(2)})` : 'Assinatura Mensal da Plataforma',
+                            description: 'Assinatura Mensal da Plataforma',
                         },
-                        unit_amount: Math.round(finalAmount * 100),
+                        unit_amount: Math.round(baseAmount * 100), // Use Full Price
                         recurring: {
                             interval: 'month',
                         },
@@ -116,6 +169,7 @@ export async function POST(req: Request) {
                 },
             ],
             mode: 'subscription',
+            ...(stripeCouponId ? { discounts: [{ coupon: stripeCouponId }] } : {}),
             success_url: `${process.env.NEXT_PUBLIC_FRONTEND_URL || 'https://791barber.com'}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${process.env.NEXT_PUBLIC_FRONTEND_URL || 'https://791barber.com'}/checkout/cancel`,
             metadata: {
