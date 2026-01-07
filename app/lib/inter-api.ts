@@ -1,6 +1,10 @@
 import axios from 'axios';
 import { supabaseAdmin } from './supabase';
 import * as https from 'https';
+import * as dns from 'dns';
+import { promisify } from 'util';
+
+const lookup = promisify(dns.lookup);
 
 interface InterConfig {
     clientId: string;
@@ -10,9 +14,13 @@ interface InterConfig {
 }
 
 export class InterAPI {
-    private baseUrl = 'https://cdp.inter.co/pix/v2';
-    private billingUrl = 'https://cdp.inter.co/cobranca/v3/cobrancas';
-    private authUrl = 'https://cdp.inter.co/oauth/v2/token';
+    // We will resolve this IP dynamically to avoid DNS issues
+    private host = 'cdp.inter.co';
+    private baseUrl = `https://${this.host}/pix/v2`;
+    private billingUrl = `https://${this.host}/cobranca/v3/cobrancas`;
+    private authUrl = `https://${this.host}/oauth/v2/token`;
+
+    // ... existing properties
     private config: InterConfig;
     private accessToken: string | null = null;
     private tokenExpiresAt: number = 0;
@@ -26,9 +34,22 @@ export class InterAPI {
             cert: this.config.cert,
             key: this.config.key,
             keepAlive: true,
-            rejectUnauthorized: false // Necessary for Vercel/Node to accept mTLS
+            rejectUnauthorized: false
         });
     }
+
+    // Helper to resolve IP if DNS fails
+    private async resolveHost() {
+        try {
+            const { address } = await lookup(this.host);
+            console.log(`[DNS] Resolved ${this.host} to ${address}`);
+            return address;
+        } catch (e) {
+            console.error(`[DNS] Failed to resolve ${this.host}`, e);
+            return null; // Let axios try natively
+        }
+    }
+
 
     async getAccessToken(): Promise<string> {
         if (this.accessToken && Date.now() < this.tokenExpiresAt) {
