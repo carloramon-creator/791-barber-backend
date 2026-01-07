@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { InterAPIV2 } from '@/app/lib/inter-api-v2';
+import { InterAPIV3 } from '@/app/lib/inter-api-v3';
 
 export async function GET(req: Request) {
     try {
@@ -27,11 +27,11 @@ export async function GET(req: Request) {
             }, { status: 500 });
         }
 
-        // 2. Tentar criar instância do Inter
+        // 2. Tentar criar instância do Inter V3
         const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
         const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
 
-        const inter = new InterAPIV2({
+        const inter = new InterAPIV3({
             clientId: process.env.INTER_CLIENT_ID!,
             clientSecret: process.env.INTER_CLIENT_SECRET || '',
             cert: cert,

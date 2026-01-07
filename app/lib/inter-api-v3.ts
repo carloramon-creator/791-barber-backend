@@ -1,0 +1,134 @@
+import * as https from 'https';
+
+interface InterConfigV3 {
+    clientId: string;
+    clientSecret: string;
+    cert: string;
+    key: string;
+}
+
+export class InterAPIV3 {
+    private config: InterConfigV3;
+    private accessToken: string | null = null;
+    private tokenExpiresAt: number = 0;
+
+    constructor(config: InterConfigV3) {
+        this.config = config;
+    }
+
+    private async makeRequest(options: https.RequestOptions, body?: string): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const req = https.request(options, (res) => {
+                let data = '';
+
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+
+                res.on('end', () => {
+                    if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                        try {
+                            resolve(JSON.parse(data));
+                        } catch (e) {
+                            resolve(data);
+                        }
+                    } else {
+                        reject({
+                            statusCode: res.statusCode,
+                            message: data,
+                            headers: res.headers
+                        });
+                    }
+                });
+            });
+
+            req.on('error', (error) => {
+                reject(error);
+            });
+
+            if (body) {
+                req.write(body);
+            }
+
+            req.end();
+        });
+    }
+
+    async getAccessToken(): Promise<string> {
+        if (this.accessToken && Date.now() < this.tokenExpiresAt) {
+            return this.accessToken;
+        }
+
+        const params = new URLSearchParams();
+        params.append('client_id', this.config.clientId);
+        params.append('client_secret', this.config.clientSecret);
+        params.append('scope', 'pix.read pix.write webhook.read webhook.write boleto-cobranca.read boleto-cobranca.write');
+        params.append('grant_type', 'client_credentials');
+
+        const body = params.toString();
+
+        console.log('[INTER V3] Requesting Token from: https://cdp.inter.co/oauth/v2/token');
+
+        try {
+            const options: https.RequestOptions = {
+                hostname: 'cdp.inter.co',
+                port: 443,
+                path: '/oauth/v2/token',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Length': Buffer.byteLength(body)
+                },
+                cert: this.config.cert,
+                key: this.config.key,
+                rejectUnauthorized: false,
+                family: 4 // Force IPv4
+            };
+
+            const data = await this.makeRequest(options, body);
+
+            this.accessToken = data.access_token;
+            this.tokenExpiresAt = Date.now() + (data.expires_in * 1000) - 60000;
+
+            console.log('[INTER V3] Token obtained successfully');
+            return this.accessToken!;
+        } catch (error: any) {
+            console.error('[INTER V3] Auth Error:', error);
+            throw new Error(`Inter Auth Error: ${JSON.stringify(error)}`);
+        }
+    }
+
+    async createBilling(payload: any) {
+        const token = await this.getAccessToken();
+        const body = JSON.stringify(payload);
+
+        console.log('[INTER V3] Creating Billing');
+        console.log('[INTER V3] Payload:', JSON.stringify(payload, null, 2));
+
+        try {
+            const options: https.RequestOptions = {
+                hostname: 'cdp.inter.co',
+                port: 443,
+                path: '/cobranca/v3/cobrancas',
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(body)
+                },
+                cert: this.config.cert,
+                key: this.config.key,
+                rejectUnauthorized: false,
+                family: 4 // Force IPv4
+            };
+
+            const data = await this.makeRequest(options, body);
+
+            console.log('[INTER V3] Billing Success:', JSON.stringify(data));
+            return data;
+        } catch (error: any) {
+            console.error('[INTER V3] Billing Error:', error);
+            throw new Error(`Inter Billing Error: ${JSON.stringify(error)}`);
+        }
+    }
+}

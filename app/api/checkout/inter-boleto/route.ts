@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserAndTenant, addCorsHeaders } from '@/app/lib/utils';
 import { supabaseAdmin } from '@/app/lib/supabase';
-import { InterAPIV2 } from '@/app/lib/inter-api-v2';
+import { InterAPIV3 } from '@/app/lib/inter-api-v3';
 
 export async function OPTIONS(req: Request) {
     const response = new NextResponse(null, { status: 200 });
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
         dueDate.setDate(dueDate.getDate() + 3); // Vencimento em 3 dias
         const dueDateStr = dueDate.toISOString().split('T')[0];
 
-        // 4. Integrar com Inter (USANDO V2)
+        // 4. Integrar com Inter (USANDO V3 - Native HTTPS)
         const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
         const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
 
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
             return addCorsHeaders(req, NextResponse.json({ error: 'Configuração do Inter incompleta no servidor' }, { status: 500 }));
         }
 
-        const inter = new InterAPIV2({
+        const inter = new InterAPIV3({
             clientId: process.env.INTER_CLIENT_ID,
             clientSecret: process.env.INTER_CLIENT_SECRET || '',
             cert: cert,
