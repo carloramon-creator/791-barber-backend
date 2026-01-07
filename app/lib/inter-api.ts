@@ -25,6 +25,7 @@ export class InterAPI {
             cert: this.config.cert,
             key: this.config.key,
             keepAlive: true,
+            rejectUnauthorized: false
         });
     }
 
