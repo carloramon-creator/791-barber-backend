@@ -98,7 +98,7 @@ export async function POST(req: Request) {
         // 3. Criar Checkout Session Dinâmica
         const session = await stripe.checkout.sessions.create({
             customer: customerId,
-            payment_method_types: ['card', 'boleto'],
+            payment_method_types: ['card'],
             line_items: [
                 {
                     price_data: {
