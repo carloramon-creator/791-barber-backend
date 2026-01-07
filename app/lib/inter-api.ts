@@ -151,6 +151,25 @@ export class InterAPI {
 
         return await response.json();
     }
+
+    async getBillingPdf(nossoNumero: string): Promise<Buffer> {
+        const token = await this.getAccessToken();
+
+        const response = await fetch(`${this.billingUrl}/${nossoNumero}/pdf`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+            // @ts-ignore
+            agent: this.getAgent(),
+        } as any);
+
+        if (!response.ok) {
+            throw new Error(`Inter PDF Error: ${response.statusText}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+    }
 }
 
 export async function getInterClient(tenantId: string) {
