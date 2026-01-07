@@ -76,15 +76,15 @@ export async function POST(req: Request) {
             .single();
 
         // 4. Preparar Payload do Boleto Inter V3
-        // NOTA: Para boleto bancário, o Inter EXIGE CPF ou CNPJ real do pagador.
-        // Se o tenant não tiver cpf_cnpj cadastrado, usamos um fallback mas avisamos que pode falhar.
         const { data: tenantData } = await supabaseAdmin
             .from('tenants')
-            .select('cpf_cnpj, address_city, address_state, address_zip, address_street')
+            .select('cnpj, address_city, address_state, address_zip, address_street')
             .eq('id', tenant.id)
             .single();
 
-        if (!tenantData?.cpf_cnpj) {
+        const document = tenantData?.cnpj?.replace(/\D/g, '') || '';
+
+        if (!document) {
             return addCorsHeaders(req, NextResponse.json({
                 error: 'Para gerar boleto, é necessário cadastrar o CPF ou CNPJ em Configurações > Barbearia.'
             }, { status: 400 }));
@@ -98,16 +98,16 @@ export async function POST(req: Request) {
         const payload = {
             numDiasAgendaRecebimento: 30,
             pagador: {
-                cpfCnpj: tenantData.cpf_cnpj.replace(/\D/g, ''),
+                cpfCnpj: document,
                 nome: tenant.name.slice(0, 100),
                 email: userProfile?.email || "pagamento@791barber.com",
-                tipoPessoa: tenantData.cpf_cnpj.length > 11 ? "JURIDICA" : "FISICA",
-                cep: tenantData.address_zip?.replace(/\D/g, '') || "00000000",
+                tipoPessoa: document.length > 11 ? "JURIDICA" : "FISICA",
+                cep: tenantData?.address_zip?.replace(/\D/g, '') || "00000000",
                 numero: "SN",
-                endereco: tenantData.address_street || "Endereço não informado",
+                endereco: tenantData?.address_street || "Endereço não informado",
                 bairro: "Centro",
-                cidade: tenantData.address_city || "Cidade",
-                uf: tenantData.address_state || "SC"
+                cidade: tenantData?.address_city || "Cidade",
+                uf: tenantData?.address_state || "SC"
             },
             dataVencimento: dueDateStr,
             valorNominal: amount.toFixed(2),
