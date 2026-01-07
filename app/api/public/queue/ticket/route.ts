@@ -22,8 +22,12 @@ export async function GET(req: Request) {
                 barbers (
                     id,
                     name,
-                    photo_url,
-                    avg_time_minutes
+                    avg_time_minutes,
+                    users (
+                        photo_url,
+                        name,
+                        nickname
+                    )
                 )
             `)
             .eq('id', ticketId)
@@ -49,8 +53,17 @@ export async function GET(req: Request) {
             estimatedWait = (count || 0) * (ticket.barbers?.avg_time_minutes || 30);
         }
 
+        const barberData = ticket.barbers;
+        const formattedBarber = barberData ? {
+            id: barberData.id,
+            name: barberData.users?.name || barberData.name,
+            photo_url: barberData.users?.photo_url || (barberData as any).photo_url,
+            avg_time_minutes: barberData.avg_time_minutes
+        } : null;
+
         return NextResponse.json({
             ...ticket,
+            barbers: formattedBarber,
             real_position: realPosition,
             estimated_wait_minutes: estimatedWait
         });

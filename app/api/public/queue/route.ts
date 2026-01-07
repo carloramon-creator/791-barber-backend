@@ -44,7 +44,7 @@ export async function GET(req: Request) {
         // 2. Buscar todos barbeiros ATIVOS e NÃO-OFFLINE do tenant
         const { data: barbers, error: barbersError } = await supabaseAdmin
             .from('barbers')
-            .select('*, users!inner(last_seen_at)')
+            .select('*, users!inner(last_seen_at, photo_url, name, nickname)')
             .eq('tenant_id', tenantId)
             .eq('is_active', true)
             .neq('status', 'offline')
@@ -112,10 +112,10 @@ export async function GET(req: Request) {
 
             return {
                 barber_id: barber.id,
-                barber_name: barber.name,
-                barber_nickname: barber.nickname,
+                barber_name: (barber as any).users?.name || barber.name,
+                barber_nickname: (barber as any).users?.nickname || barber.nickname,
                 user_id: barber.user_id,
-                photo_url: barber.photo_url,
+                photo_url: (barber as any).users?.photo_url || barber.photo_url,
                 status: barber.status === 'online' ? 'available' : barber.status,
                 is_active: barber.is_active,
                 avg_time_minutes: avgTime,

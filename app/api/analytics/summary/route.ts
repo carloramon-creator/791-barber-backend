@@ -18,7 +18,7 @@ export async function GET() {
             { data: sales, error: salesError },
             { data: allQueueItems, error: queueError }
         ] = await Promise.all([
-            supabaseAdmin.from('barbers').select('*').eq('tenant_id', tenant.id).order('name', { ascending: true }),
+            supabaseAdmin.from('barbers').select('*, users(photo_url, name, nickname)').eq('tenant_id', tenant.id).order('name', { ascending: true }),
             supabaseAdmin.from('sales').select('*').eq('tenant_id', tenant.id).gte('created_at', todayStart).lte('created_at', todayEnd),
             supabaseAdmin.from('client_queue').select('*, clients(photo_url, name, cpf)').eq('tenant_id', tenant.id).in('status', ['waiting', 'attending']).order('position', { ascending: true })
         ]);
@@ -48,11 +48,14 @@ export async function GET() {
 
             const avgTime = dynamicAverages[barber.id] || barber.avg_time_minutes;
 
-            // Determinar status real baseado na fila (se estiver marcado como busy mas não tiver ninguém atendendo, mostrar available)
+            // Determinar status real baseado na fila
             let realStatus = barber.status;
-            if (realStatus === 'busy' && !attendingItem) {
+            if (attendingItem && realStatus !== 'offline') {
+                realStatus = 'busy';
+            } else if (realStatus === 'busy' && !attendingItem) {
                 realStatus = 'available';
             }
+
             if (realStatus === 'online') {
                 realStatus = 'available';
             }
@@ -93,9 +96,9 @@ export async function GET() {
 
             return {
                 barber_id: barber.id,
-                barber_name: barber.name,
-                barber_nickname: barber.nickname,
-                photo_url: barber.photo_url,
+                barber_name: (barber as any).users?.name || barber.name,
+                barber_nickname: (barber as any).users?.nickname || barber.nickname,
+                photo_url: (barber as any).users?.photo_url || barber.photo_url,
                 status: realStatus,
                 is_active: barber.is_active,
                 avg_time_minutes: avgTime,
