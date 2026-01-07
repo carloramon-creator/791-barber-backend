@@ -52,19 +52,13 @@ export async function GET(req: Request) {
 
         if (barbersError) throw barbersError;
 
-        // 1.1 Filtrar barbeiros que não estão realmente "logados" (inatividade > 90 min)
-        const now = new Date();
-        const activeBarbers = (barbers || []).filter(barber => {
-            const lastSeen = (barber as any).users?.last_seen_at ? new Date((barber as any).users.last_seen_at) : null;
-            if (!lastSeen) return false;
-            const diffMinutes = (now.getTime() - lastSeen.getTime()) / 60000;
-            return diffMinutes <= 90; // Tolerância de 1h30m de inatividade
-        });
+        // 1.1 Para o app público, mostramos todos os barbeiros ativos do tenant
+        const activeBarbers = barbers || [];
 
-        // 2. Buscar itens de fila ativos
+        // 2. Buscar itens de fila ativos com dados dos clientes
         const { data: allQueueItems, error: queueError } = await supabaseAdmin
             .from('client_queue')
-            .select('*')
+            .select('*, clients(photo_url, name)')
             .eq('tenant_id', tenantId)
             .in('status', ['waiting', 'attending'])
             .order('position', { ascending: true });
@@ -98,7 +92,8 @@ export async function GET(req: Request) {
 
                 return {
                     id: q.id,
-                    client_name: q.client_name,
+                    client_name: (q as any).clients?.name || q.client_name,
+                    client_photo: (q as any).clients?.photo_url,
                     client_phone: q.client_phone,
                     status: q.status,
                     position: q.position,
@@ -118,9 +113,10 @@ export async function GET(req: Request) {
             return {
                 barber_id: barber.id,
                 barber_name: barber.name,
+                barber_nickname: barber.nickname,
                 user_id: barber.user_id,
                 photo_url: barber.photo_url,
-                status: barber.status,
+                status: barber.status === 'online' ? 'available' : barber.status,
                 is_active: barber.is_active,
                 avg_time_minutes: avgTime,
                 queue: formattedQueue,

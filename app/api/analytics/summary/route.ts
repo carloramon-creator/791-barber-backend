@@ -20,7 +20,7 @@ export async function GET() {
         ] = await Promise.all([
             supabaseAdmin.from('barbers').select('*').eq('tenant_id', tenant.id).order('name', { ascending: true }),
             supabaseAdmin.from('sales').select('*').eq('tenant_id', tenant.id).gte('created_at', todayStart).lte('created_at', todayEnd),
-            supabaseAdmin.from('client_queue').select('*').eq('tenant_id', tenant.id).in('status', ['waiting', 'attending']).order('position', { ascending: true })
+            supabaseAdmin.from('client_queue').select('*, clients(photo_url, name, cpf)').eq('tenant_id', tenant.id).in('status', ['waiting', 'attending']).order('position', { ascending: true })
         ]);
 
         if (barbersError) throw barbersError;
@@ -48,10 +48,13 @@ export async function GET() {
 
             const avgTime = dynamicAverages[barber.id] || barber.avg_time_minutes;
 
-            // Determinar status real baseado na fila (se estiver marcado como busy mas não tiver ninguém atendendo, mostrar online)
+            // Determinar status real baseado na fila (se estiver marcado como busy mas não tiver ninguém atendendo, mostrar available)
             let realStatus = barber.status;
             if (realStatus === 'busy' && !attendingItem) {
-                realStatus = 'online';
+                realStatus = 'available';
+            }
+            if (realStatus === 'online') {
+                realStatus = 'available';
             }
 
             const formattedQueue = barberQueue.map(q => {
@@ -73,6 +76,8 @@ export async function GET() {
 
                 return {
                     ...q,
+                    client_name: (q as any).clients?.name || q.client_name,
+                    client_photo: (q as any).clients?.photo_url,
                     estimated_time_minutes: itemWait,
                     status_color: getStatusColor(q.status)
                 };
