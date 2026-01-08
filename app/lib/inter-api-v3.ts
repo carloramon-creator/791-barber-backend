@@ -244,4 +244,40 @@ export class InterAPIV3 {
             throw new Error(`Inter PDF Error: ${JSON.stringify(error)}`);
         }
     }
+
+    async registerWebhook(webhookUrl: string, type: 'boleto' | 'pix') {
+        const token = await this.getAccessToken();
+        const path = type === 'boleto'
+            ? '/cobranca/v3/cobrancas/webhook'
+            : '/pix/v2/webhook';
+
+        console.log(`[INTER V3] Registering ${type} webhook to: ${webhookUrl}`);
+
+        const body = JSON.stringify({ webhookUrl });
+
+        const options: https.RequestOptions = {
+            hostname: 'cdpj.partners.bancointer.com.br',
+            port: 443,
+            path: path,
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body)
+            },
+            cert: this.config.cert,
+            key: this.config.key,
+            rejectUnauthorized: false,
+            family: 4
+        };
+
+        try {
+            await this.makeRequest(options, body);
+            console.log(`[INTER V3] ${type} Webhook registered successfully!`);
+            return { success: true, type };
+        } catch (error: any) {
+            console.error(`[INTER V3] Error registering ${type} webhook:`, error);
+            throw new Error(`Inter Webhook Error (${type}): ${JSON.stringify(error)}`);
+        }
+    }
 }
