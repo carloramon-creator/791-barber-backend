@@ -245,13 +245,18 @@ export class InterAPIV3 {
         }
     }
 
-    async registerWebhook(webhookUrl: string, type: 'boleto' | 'pix') {
+    async registerWebhook(webhookUrl: string, type: 'boleto' | 'pix', pixKey?: string) {
         const token = await this.getAccessToken();
-        const path = type === 'boleto'
-            ? '/cobranca/v3/cobrancas/webhook'
-            : '/pix/v2/webhook';
+        let path = '';
 
-        console.log(`[INTER V3] Registering ${type} webhook to: ${webhookUrl}`);
+        if (type === 'boleto') {
+            path = '/cobranca/v3/cobrancas/webhook';
+        } else {
+            if (!pixKey) throw new Error('Chave Pix é obrigatória para registrar webhook de Pix.');
+            path = `/pix/v2/webhook/${pixKey}`;
+        }
+
+        console.log(`[INTER V3] Registering ${type} webhook to: ${webhookUrl} (Path: ${path})`);
 
         const body = JSON.stringify({ webhookUrl });
 

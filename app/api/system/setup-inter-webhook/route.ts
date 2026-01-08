@@ -31,9 +31,19 @@ export async function GET(req: Request) {
 
         console.log('[SETUP] Registering Webhook:', webhookUrl);
 
+        // Fetch Pix Key from settings
+        const { data: settings } = await supabaseAdmin
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'inter_config')
+            .single();
+
+        const interConfig = settings?.value || {};
+        const pixKey = interConfig.pix_key;
+
         // Register both Boleto and Pix webhooks
         const res1 = await inter.registerWebhook(webhookUrl, 'boleto');
-        const res2 = await inter.registerWebhook(webhookUrl, 'pix');
+        const res2 = await inter.registerWebhook(webhookUrl, 'pix', pixKey);
 
         return NextResponse.json({
             success: true,
