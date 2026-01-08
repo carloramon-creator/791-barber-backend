@@ -143,12 +143,11 @@ export class InterAPIV3 {
 
             console.log(`[INTER V3] Searching Date Range: ${yesterdayStr} to ${tomorrowStr}`);
 
-            const maxRetries = 5; // 5 tentativas
+            const maxRetries = 1;
 
             for (let i = 0; i < maxRetries; i++) {
-                // Backoff: Começa com 3s e aumenta 2s a cada tentativa
-                const waitTime = 3000 + (i * 2000);
-                console.log(`[INTER V3] Attempt ${i + 1}/${maxRetries} - Waiting ${waitTime}ms...`);
+                const waitTime = 1500;
+                console.log(`[INTER V3] Fast Attempt ${i + 1}/${maxRetries} - Waiting ${waitTime}ms...`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
 
                 const searchOptions: https.RequestOptions = {

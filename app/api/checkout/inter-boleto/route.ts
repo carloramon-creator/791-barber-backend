@@ -155,6 +155,7 @@ export async function POST(req: Request) {
                 success: true,
                 pending: true,
                 message: interBoleto.message,
+                seu_numero: payload.seuNumero, // Adicionado para o polling do frontend
                 amount: amount
             }));
         }
