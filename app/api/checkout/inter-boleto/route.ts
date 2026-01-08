@@ -42,67 +42,49 @@ export async function POST(req: Request) {
                 .single();
 
             if (couponData) {
-                // Verificar limite de uso e validade se necessário...
-                // Por enquanto, lógica simplificada
                 couponApplied = code;
                 if (couponData.discount_percent) {
                     discount = (amount * Number(couponData.discount_percent)) / 100;
                 } else if (couponData.discount_value) {
                     discount = Number(couponData.discount_value);
                 }
-            } else {
-                return addCorsHeaders(req,
-                    NextResponse.json({ error: 'Cupom inválido ou expirado' }, { status: 400 })
-                );
             }
         }
 
         amount = Math.max(0, amount - discount);
         const currentDate = new Date().toISOString().split('T')[0];
         const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + 3); // Vencimento em 3 dias
+        dueDate.setDate(dueDate.getDate() + 3);
         const dueDateStr = dueDate.toISOString().split('T')[0];
 
-        // 4. Integrar com Inter (USANDO V3 - Native HTTPS)
+        // 2. Configurar Inter
         const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
         const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
 
         if (!process.env.INTER_CLIENT_ID || !cert || !key) {
-            return addCorsHeaders(req, NextResponse.json({ error: 'Configuração do Inter incompleta no servidor' }, { status: 500 }));
+            return addCorsHeaders(req, NextResponse.json({ error: 'Configuração do Inter incompleta' }, { status: 500 }));
         }
 
         const inter = new InterAPIV3({
             clientId: process.env.INTER_CLIENT_ID,
             clientSecret: process.env.INTER_CLIENT_SECRET || '',
-            cert: cert,
-            key: key
+            cert, key
         });
 
-        // Garantir documento limpo
-        // Tenta pegar CNPJ do tenant, ou CPF do tenant, ou o documento da conta bancária
-        let doc = (tenant.cnpj || tenant.cpf || tenant.document || tenant.bank_account_doc || tenant.cpf_cnpj || "").replace(/\D/g, '');
+        let doc = (tenant.cnpj || tenant.cpf || tenant.document || tenant.bank_account_doc || "").replace(/\D/g, '');
 
-        // Se não achou no tenant, busca no usuário logado
         if (!doc) {
-            const { data: userData } = await supabaseAdmin
-                .from('users')
-                .select('cpf')
-                .eq('id', user.id)
-                .single();
-
-            if (userData && userData.cpf) {
-                doc = userData.cpf.replace(/\D/g, '');
-            }
+            const { data: userData } = await supabaseAdmin.from('users').select('cpf').eq('id', user.id).single();
+            if (userData?.cpf) doc = userData.cpf.replace(/\D/g, '');
         }
 
         if (!doc || doc.length < 11) {
-            return addCorsHeaders(req, NextResponse.json({
-                error: 'Para emitir boletos, é necessário cadastrar um CPF ou CNPJ válido nas configurações da sua barbearia ou no seu perfil de usuário.'
-            }, { status: 400 }));
+            return addCorsHeaders(req, NextResponse.json({ error: 'CPF/CNPJ necessário para emitir boleto.' }, { status: 400 }));
         }
 
+        const seuNumero = tempId || String(Date.now()).slice(-15);
         const payload = {
-            seuNumero: tempId || String(Date.now()).slice(-15), // Usa o ID vindo do frontend sem cortes extras
+            seuNumero,
             pagador: {
                 cpfCnpj: doc,
                 tipoPessoa: doc.length > 11 ? "JURIDICA" : "FISICA",
@@ -118,102 +100,86 @@ export async function POST(req: Request) {
             valorNominal: amount.toFixed(2),
             dataEmissao: currentDate,
             mensagem: {
-                linha1: `Assinatura 791 Barber - Plano ${plan}`.substring(0, 80),
-                linha2: (couponApplied ? `Cupom ${couponApplied} aplicado` : "").substring(0, 80)
+                linha1: `Assinatura 791 Barber - Plano ${plan}`.substring(0, 80)
             }
         };
 
-        console.log('[SAAS BOLETO] Criando cobrança no Inter...');
-        console.log('[SAAS BOLETO] Criando boleto no Inter...');
-        console.log('[SAAS BOLETO PAYLOAD]', JSON.stringify(payload));
+        // 3. REGISTRAR NO BANCO
+        console.log('[INTER] Criando boleto...');
+        let interRes = await inter.createBilling(payload);
 
-        const interBoleto = await inter.createBilling(payload);
-        console.log('[SAAS BOLETO] Resposta Inter:', JSON.stringify(interBoleto));
+        // --- PULO DO GATO: Se o banco foi rápido, búscamos agora mesmo ---
+        if (interRes.codigoSolicitacao || interRes.pending_processing) {
+            console.log('[INTER] Aguardando 1.5s para busca imediata...');
+            await new Promise(r => setTimeout(r, 1500));
 
-        // Check for pending processing
-        if (interBoleto.pending_processing || interBoleto.codigoSolicitacao) {
-            // Salvar como pendente
-            await supabaseAdmin
-                .from('finance')
-                .insert({
-                    tenant_id: null,
-                    type: 'revenue',
-                    value: amount,
-                    description: `Boleto SaaS Pendente (Processando) - Plano ${plan} (${tenant.name})`,
-                    date: currentDate,
-                    is_paid: false,
-                    metadata: {
-                        nosso_numero: 'PENDING',
-                        txid: interBoleto.codigoSolicitacao || 'N/A',
-                        seu_numero: payload.seuNumero,
-                        tenant_id: tenant.id,
-                        method: 'boleto_inter'
-                    }
+            try {
+                const token = await inter.getAccessToken();
+                const now = new Date();
+                const dInit = new Date(now); dInit.setDate(dInit.getDate() - 1);
+                const dEnd = new Date(now); dEnd.setDate(dEnd.getDate() + 1);
+
+                const path = `/cobranca/v3/cobrancas?seuNumero=${seuNumero}&dataInicial=${dInit.toISOString().split('T')[0]}&dataFinal=${dEnd.toISOString().split('T')[0]}`;
+                const searchRes = await inter.makeRequest({
+                    hostname: 'cdpj.partners.bancointer.com.br',
+                    port: 443, path, method: 'GET',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    cert, key, rejectUnauthorized: false, family: 4
                 });
 
-            return addCorsHeaders(req, NextResponse.json({
-                success: true,
-                pending: true,
-                message: interBoleto.message,
-                seu_numero: payload.seuNumero, // Adicionado para o polling do frontend
-                amount: amount
-            }));
+                const items = searchRes.cobrancas || searchRes.content || [];
+                if (items.length > 0) {
+                    interRes = items[0]; // Substitui pela cobrança real com nossoNumero!
+                    console.log('[INTER] Cobrança encontrada na busca imediata!');
+                }
+            } catch (e) {
+                console.error('[INTER] Erro na busca imediata, seguindo para fluxo pendente.');
+            }
         }
 
-        const nossoNumero = interBoleto.nossoNumero;
+        const isReady = interRes.nossoNumero && interRes.nossoNumero !== 'PENDING';
 
-        if (!nossoNumero) {
-            // DEBUG: Mostrar o que veio de volta para sabermos onde está o campo
-            console.error('Resposta sem nossoNumero:', JSON.stringify(interBoleto));
-            throw new Error(`DEBUG INTER: ${JSON.stringify(interBoleto).substring(0, 200)}...`);
-        }
-
-        // 5. Salvar registro local
+        // 4. Salvar registro local
         await supabaseAdmin
             .from('finance')
             .insert({
                 tenant_id: null,
                 type: 'revenue',
                 value: amount,
-                description: `Boleto SaaS Pendente - Plano ${plan} (${tenant.name})`,
+                description: `SaaS - Plano ${plan} (${tenant.name})`,
                 date: currentDate,
                 is_paid: false,
                 metadata: {
-                    nosso_numero: interBoleto.nossoNumero,
-                    txid: interBoleto.codigoSolicitacao || interBoleto.txid || 'N/A',
-                    seu_numero: payload.seuNumero,
-                    tenant_id: tenant.id
+                    nosso_numero: interRes.nossoNumero || 'PENDING',
+                    txid: interRes.codigoSolicitacao || interRes.txid || 'N/A',
+                    seu_numero: seuNumero,
+                    tenant_id: tenant.id,
+                    codigo_barras: interRes.codigoBarras,
+                    linha_digitavel: interRes.linhaDigitavel,
+                    method: 'boleto_inter'
                 }
             });
 
+        if (isReady) {
+            return addCorsHeaders(req, NextResponse.json({
+                success: true,
+                nossoNumero: interRes.nossoNumero,
+                codigoBarras: interRes.codigoBarras,
+                linhaDigitavel: interRes.linhaDigitavel,
+                pdfUrl: `https://api.791barber.com/api/checkout/inter-boleto/pdf?nossoNumero=${interRes.nossoNumero}`
+            }));
+        }
+
         return addCorsHeaders(req, NextResponse.json({
             success: true,
-            nossoNumero: interBoleto.nossoNumero,
-            codigoBarras: interBoleto.codigoBarras,
-            linhaDigitavel: interBoleto.linhaDigitavel,
-            // Usando o PDF direto do Inter se possível, ou construindo proxy
-            pdfUrl: `${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://api.791barber.com'}/api/checkout/inter-boleto/pdf?nossoNumero=${interBoleto.nossoNumero}`
+            pending: true,
+            message: 'Boleto em processamento no banco.',
+            seu_numero: seuNumero,
+            amount: amount
         }));
 
     } catch (error: any) {
-        console.error('[SAAS BOLETO CHECKOUT ERROR]', error);
-
-        let errorMessage = error.message;
-        try {
-            // Tenta extrair mensagem detalhada do Inter
-            if (errorMessage.includes('Inter Billing Error:')) {
-                const jsonPart = errorMessage.split('Inter Billing Error: ')[1];
-                const interError = JSON.parse(jsonPart);
-                if (interError.violacoes && interError.violacoes.length > 0) {
-                    errorMessage = `Banco Inter recusou: ${interError.violacoes[0].razao} (${interError.violacoes[0].valor})`;
-                } else if (interError.detail) {
-                    errorMessage = `Banco Inter: ${interError.detail}`;
-                }
-            }
-        } catch (e) {
-            // Falha ao parsear, mantem erro original
-        }
-
-        return addCorsHeaders(req, NextResponse.json({ error: errorMessage }, { status: 500 }));
+        console.error('[CHECKOUT ERROR]', error);
+        return addCorsHeaders(req, NextResponse.json({ error: error.message || 'Erro interno' }, { status: 500 }));
     }
 }
