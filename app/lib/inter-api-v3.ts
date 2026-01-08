@@ -131,15 +131,17 @@ export class InterAPIV3 {
             // Se for assíncrono (só codigoSolicitacao), precisamos buscar os detalhes
             console.log('[INTER V3] Async response received, fetching details...', initialResponse);
 
-            // Aguarda 1s para processamento
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Aguarda 1.5s para processamento (aumentei um pouco)
+            await new Promise(resolve => setTimeout(resolve, 1500));
 
-            // Buscar pelo seuNumero (que enviamos no payload)
-            // Endpoint: GET /cobranca/v3/cobrancas?seuNumero={seuNumero}
+            const today = new Date().toISOString().split('T')[0];
+
+            // Buscar pelo seuNumero COM datas obrigatórias
+            // Endpoint: GET /cobranca/v3/cobrancas?seuNumero={seuNumero}&dataInicial={today}&dataFinal={today}
             const searchOptions: https.RequestOptions = {
                 hostname: 'cdpj.partners.bancointer.com.br',
                 port: 443,
-                path: `/cobranca/v3/cobrancas?seuNumero=${payload.seuNumero}`,
+                path: `/cobranca/v3/cobrancas?seuNumero=${payload.seuNumero}&dataInicial=${today}&dataFinal=${today}`,
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`
