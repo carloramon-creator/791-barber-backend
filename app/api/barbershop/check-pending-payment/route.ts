@@ -17,7 +17,6 @@ export async function GET(req: Request) {
 
         if (!seuNumero) return addCorsHeaders(req, NextResponse.json({ error: 'seuNumero ausente' }, { status: 400 }));
 
-        // 1. Busca rápida no banco local
         const { data: charge } = await supabaseAdmin
             .from('finance')
             .select('*')
@@ -26,10 +25,8 @@ export async function GET(req: Request) {
 
         if (!charge) return addCorsHeaders(req, NextResponse.json({ ready: false }));
 
-        // Se já tem nosso_numero real, já está pronto
         let isReady = charge.metadata?.nosso_numero && charge.metadata.nosso_numero !== 'PENDING';
 
-        // 2. Se ainda está pendente localmente, vamos forçar uma busca no Inter
         if (!isReady) {
             const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
             const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
@@ -79,7 +76,7 @@ export async function GET(req: Request) {
                 ready: true,
                 type: isPix ? 'pix' : 'boleto',
                 payload: isPix ? {
-                    pixPayload: charge.metadata.pix_payload || charge.metadata.linha_digitavel, // Fallback
+                    pixPayload: charge.metadata.pix_payload || charge.metadata.linha_digitavel,
                     amount: charge.value,
                     expiresAt: charge.metadata.expires_at
                 } : {
