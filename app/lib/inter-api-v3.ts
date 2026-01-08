@@ -116,4 +116,37 @@ export class InterAPIV3 {
         await this.makeRequest(options, body);
         return { success: true };
     }
+
+    async getBillingPdf(nossoNumero: string): Promise<Buffer> {
+        const token = await this.getAccessToken();
+        const options: https.RequestOptions = {
+            hostname: 'cdpj.partners.bancointer.com.br',
+            port: 443,
+            path: `/cobranca/v3/cobrancas/${nossoNumero}/pdf`,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            cert: this.config.cert,
+            key: this.config.key,
+            rejectUnauthorized: false,
+            family: 4
+        };
+
+        return new Promise((resolve, reject) => {
+            const req = https.request(options, (res) => {
+                const chunks: any[] = [];
+                res.on('data', (chunk) => chunks.push(chunk));
+                res.on('end', () => {
+                    if (res.statusCode === 200) {
+                        resolve(Buffer.concat(chunks));
+                    } else {
+                        reject(new Error(`Erro ao baixar PDF: ${res.statusCode}`));
+                    }
+                });
+            });
+            req.on('error', (e) => reject(e));
+            req.end();
+        });
+    }
 }
