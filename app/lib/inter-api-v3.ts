@@ -146,8 +146,8 @@ export class InterAPIV3 {
             const maxRetries = 1;
 
             for (let i = 0; i < maxRetries; i++) {
-                const waitTime = 1500;
-                console.log(`[INTER V3] Fast Attempt ${i + 1}/${maxRetries} - Waiting ${waitTime}ms...`);
+                const waitTime = 1000;
+                console.log(`[INTER V3] Ultra Fast Attempt ${i + 1}/${maxRetries}...`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
 
                 const searchOptions: https.RequestOptions = {
