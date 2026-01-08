@@ -42,8 +42,6 @@ export async function POST(req: Request) {
                 .single();
 
             if (couponData) {
-                // Verificar limite de uso e validade se necessário...
-                // Por enquanto, lógica simplificada
                 couponApplied = code;
                 if (couponData.discount_percent) {
                     discount = (amount * Number(couponData.discount_percent)) / 100;
@@ -60,25 +58,10 @@ export async function POST(req: Request) {
         amount = Math.max(0, amount - discount);
         const currentDate = new Date().toISOString().split('T')[0];
         const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + 3); // Vencimento em 3 dias
+        dueDate.setHours(dueDate.getHours() + 24); // Pix expira em 24h
         const dueDateStr = dueDate.toISOString().split('T')[0];
 
-        // 4. Integrar com Inter (USANDO V3 - Native HTTPS)
-        const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
-        const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
-
-        if (!process.env.INTER_CLIENT_ID || !cert || !key) {
-            return addCorsHeaders(req, NextResponse.json({ error: 'Configuração do Inter incompleta no servidor' }, { status: 500 }));
-        }
-
-        const inter = new InterAPIV3({
-            clientId: process.env.INTER_CLIENT_ID,
-            clientSecret: process.env.INTER_CLIENT_SECRET || '',
-            cert: cert,
-            key: key
-        });
-
-        // Garantir documento limpo
+        // 2. Garantir documento CPF/CNPJ
         // Tenta pegar CNPJ do tenant, ou CPF do tenant (se tiver)
         let doc = (tenant.cnpj || tenant.cpf || tenant.document || "").replace(/\D/g, '');
 
@@ -97,12 +80,31 @@ export async function POST(req: Request) {
 
         if (!doc || doc.length < 11) {
             return addCorsHeaders(req, NextResponse.json({
-                error: 'Para emitir boletos, é necessário cadastrar um CPF ou CNPJ válido nas configurações da sua barbearia ou no seu perfil de usuário.'
+                error: 'Para gerar Pix, é necessário cadastrar um CPF ou CNPJ válido nas configurações da sua barbearia ou no seu perfil de usuário.'
             }, { status: 400 }));
         }
 
+        // 3. Integrar com Inter (V3)
+        const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
+        const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
+
+        if (!process.env.INTER_CLIENT_ID || !cert || !key) {
+            return addCorsHeaders(req, NextResponse.json({ error: 'Configuração do Inter incompleta no servidor' }, { status: 500 }));
+        }
+
+        const inter = new InterAPIV3({
+            clientId: process.env.INTER_CLIENT_ID,
+            clientSecret: process.env.INTER_CLIENT_SECRET || '',
+            cert: cert,
+            key: key
+        });
+
+        // Payload para Cobrança Imediata Pix (Boleto Híbrido ou Cobrança Imediata)
+        // Na V3 a rota POST /cobranca/v3/cobrancas gera um boleto com Pix. 
+        // O campo 'pix.chave' não é necessário na criação, o Inter gera o QR Code automaticamente.
+
         const payload = {
-            seuNumero: String(Date.now()).slice(-15), // Max 15 chars - use last 15 digits of timestamp
+            seuNumero: String(Date.now()).slice(-15),
             pagador: {
                 cpfCnpj: doc,
                 tipoPessoa: doc.length > 11 ? "JURIDICA" : "FISICA",
@@ -118,45 +120,48 @@ export async function POST(req: Request) {
             valorNominal: amount.toFixed(2),
             dataEmissao: currentDate,
             mensagem: {
-                linha1: `Assinatura 791 Barber - Plano ${plan}`.substring(0, 80),
-                linha2: (couponApplied ? `Cupom ${couponApplied} aplicado` : "").substring(0, 80)
+                linha1: `Pix 791 Barber - Plano ${plan}`.substring(0, 80),
+                linha2: (couponApplied ? `Cupom ${couponApplied}` : "").substring(0, 80)
             }
         };
 
-        console.log('[SAAS BOLETO] Criando cobrança no Inter...');
-        console.log('[SAAS BOLETO PAYLOAD]', JSON.stringify(payload));
-
+        console.log('[SAAS PIX] Criando cobrança Pix no Inter...');
         const interBoleto = await inter.createBilling(payload);
-        console.log('[SAAS BOLETO] Resposta Inter:', JSON.stringify(interBoleto));
+
+        // Na resposta v3, o campo pixCopiaECola vem dentro de 'pix' se for cobrança imediata
+        // Mas se for /cobranca/v3/cobrancas (boleto híbrido), o pix vem de outra forma?
+        // Na V3 de cobrança, ele retorna boleto E pix.
+        // Vamos usar o pixCopiaECola retornado.
+
+        const pixCopiaECola = interBoleto.pixCopiaECola;
 
         // 5. Salvar registro local
         await supabaseAdmin
             .from('finance')
             .insert({
-                tenant_id: null,
+                tenant_id: null, // Receita do SaaS
                 type: 'revenue',
                 value: amount,
-                description: `Boleto SaaS Pendente - Plano ${plan} (${tenant.name})`,
+                description: `Pix SaaS Pendente - Plano ${plan} (${tenant.name})`,
                 date: currentDate,
                 is_paid: false,
                 metadata: {
                     nosso_numero: interBoleto.nossoNumero,
                     txid: interBoleto.codigoSolicitacao || interBoleto.txid || 'N/A',
-                    tenant_id: tenant.id
+                    tenant_id: tenant.id,
+                    method: 'pix_inter'
                 }
             });
 
         return addCorsHeaders(req, NextResponse.json({
             success: true,
-            nossoNumero: interBoleto.nossoNumero,
-            codigoBarras: interBoleto.codigoBarras,
-            linhaDigitavel: interBoleto.linhaDigitavel,
-            // Usando o PDF direto do Inter se possível, ou construindo proxy
-            pdfUrl: `${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://api.791barber.com'}/api/checkout/inter-boleto/pdf?nossoNumero=${interBoleto.nossoNumero}`
+            pixPayload: pixCopiaECola || 'Pix indísponivel no momento, use o Boleto.',
+            amount: amount,
+            expiresAt: dueDateStr
         }));
 
     } catch (error: any) {
-        console.error('[SAAS BOLETO CHECKOUT ERROR]', error);
+        console.error('[SAAS PIX CHECKOUT ERROR]', error);
         return addCorsHeaders(req, NextResponse.json({ error: error.message }, { status: 500 }));
     }
 }
