@@ -103,7 +103,6 @@ export class InterAPIV3 {
         const body = JSON.stringify(payload);
 
         console.log('[INTER V3] Creating Billing');
-        console.log('[INTER V3] Payload:', JSON.stringify(payload, null, 2));
 
         try {
             const options: https.RequestOptions = {
@@ -119,13 +118,53 @@ export class InterAPIV3 {
                 cert: this.config.cert,
                 key: this.config.key,
                 rejectUnauthorized: false,
-                family: 4 // Force IPv4
+                family: 4
             };
 
-            const data = await this.makeRequest(options, body);
+            const initialResponse = await this.makeRequest(options, body);
 
-            console.log('[INTER V3] Billing Success:', JSON.stringify(data));
-            return data;
+            // Se devolver direto os dados (síncrono), retorna
+            if (initialResponse.nossoNumero) {
+                return initialResponse;
+            }
+
+            // Se for assíncrono (só codigoSolicitacao), precisamos buscar os detalhes
+            console.log('[INTER V3] Async response received, fetching details...', initialResponse);
+
+            // Aguarda 1s para processamento
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Buscar pelo seuNumero (que enviamos no payload)
+            // Endpoint: GET /cobranca/v3/cobrancas?seuNumero={seuNumero}
+            const searchOptions: https.RequestOptions = {
+                hostname: 'cdpj.partners.bancointer.com.br',
+                port: 443,
+                path: `/cobranca/v3/cobrancas?seuNumero=${payload.seuNumero}`,
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                cert: this.config.cert,
+                key: this.config.key,
+                rejectUnauthorized: false,
+                family: 4
+            };
+
+            const searchResponse = await this.makeRequest(searchOptions);
+
+            // A busca retorna uma lista (paginada) ou um array direct
+            // A estrutura geralmente é: { content: [ ... ] } ou [ ... ]
+            const cobrancas = searchResponse.cobrancas || searchResponse.content || searchResponse; // Tenta se adaptar
+
+            if (Array.isArray(cobrancas) && cobrancas.length > 0) {
+                const cobrancaCompleta = cobrancas[0];
+                console.log('[INTER V3] Fetched full billing details:', cobrancaCompleta.nossoNumero);
+                return cobrancaCompleta;
+            }
+
+            // Se não achou na busca, retorna a resposta inicial limitada
+            return initialResponse;
+
         } catch (error: any) {
             console.error('[INTER V3] Billing Error:', error);
             throw new Error(`Inter Billing Error: ${JSON.stringify(error)}`);
