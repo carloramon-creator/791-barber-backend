@@ -124,10 +124,17 @@ export async function POST(req: Request) {
         };
 
         console.log('[SAAS BOLETO] Criando cobrança no Inter...');
+        console.log('[SAAS BOLETO] Criando boleto no Inter...');
         console.log('[SAAS BOLETO PAYLOAD]', JSON.stringify(payload));
 
         const interBoleto = await inter.createBilling(payload);
         console.log('[SAAS BOLETO] Resposta Inter:', JSON.stringify(interBoleto));
+
+        const nossoNumero = interBoleto.nossoNumero;
+
+        if (!nossoNumero) {
+            throw new Error('O Banco Inter não retornou o Nosso Número do boleto. Tente novamente.');
+        }
 
         // 5. Salvar registro local
         await supabaseAdmin

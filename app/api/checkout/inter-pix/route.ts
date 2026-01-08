@@ -128,12 +128,12 @@ export async function POST(req: Request) {
         console.log('[SAAS PIX] Criando cobrança Pix no Inter...');
         const interBoleto = await inter.createBilling(payload);
 
-        // Na resposta v3, o campo pixCopiaECola vem dentro de 'pix' se for cobrança imediata
-        // Mas se for /cobranca/v3/cobrancas (boleto híbrido), o pix vem de outra forma?
-        // Na V3 de cobrança, ele retorna boleto E pix.
-        // Vamos usar o pixCopiaECola retornado.
+        // Na V3, o pixCopiaECola pode vir dentro do objeto 'pix'
+        const pixCopiaECola = interBoleto.pixCopiaECola || interBoleto.pix?.pixCopiaECola;
 
-        const pixCopiaECola = interBoleto.pixCopiaECola;
+        // Debug
+        console.log('[SAAS PIX] Resposta Inter:', JSON.stringify(interBoleto));
+        console.log('[SAAS PIX] Code:', pixCopiaECola);
 
         // 5. Salvar registro local
         await supabaseAdmin
