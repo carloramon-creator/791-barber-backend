@@ -21,7 +21,7 @@ export async function POST(req: Request) {
             return addCorsHeaders(req, NextResponse.json({ error: 'Não autenticado' }, { status: 401 }));
         }
 
-        const { plan, coupon } = await req.json();
+        const { plan, coupon, tempId } = await req.json();
         let amount = PLAN_PRICES[plan];
 
         if (!amount) {
@@ -62,10 +62,8 @@ export async function POST(req: Request) {
         const dueDateStr = dueDate.toISOString().split('T')[0];
 
         // 2. Garantir documento CPF/CNPJ
-        // Tenta pegar CNPJ do tenant, ou CPF do tenant (se tiver)
-        let doc = (tenant.cnpj || tenant.cpf || tenant.document || "").replace(/\D/g, '');
+        let doc = (tenant.cnpj || tenant.cpf || tenant.document || tenant.bank_account_doc || "").replace(/\D/g, '');
 
-        // Se não achou no tenant, busca no usuário logado
         if (!doc) {
             const { data: userData } = await supabaseAdmin
                 .from('users')
@@ -99,12 +97,8 @@ export async function POST(req: Request) {
             key: key
         });
 
-        // Payload para Cobrança Imediata Pix (Boleto Híbrido ou Cobrança Imediata)
-        // Na V3 a rota POST /cobranca/v3/cobrancas gera um boleto com Pix. 
-        // O campo 'pix.chave' não é necessário na criação, o Inter gera o QR Code automaticamente.
-
         const payload = {
-            seuNumero: String(Date.now()).slice(-15),
+            seuNumero: (tempId || String(Date.now())).slice(-15),
             pagador: {
                 cpfCnpj: doc,
                 tipoPessoa: doc.length > 11 ? "JURIDICA" : "FISICA",
@@ -143,7 +137,7 @@ export async function POST(req: Request) {
                     metadata: {
                         nosso_numero: 'PENDING',
                         txid: interBoleto.codigoSolicitacao || 'N/A',
-                        seu_numero: payload.seuNumero, // CRUCIAL para conciliação
+                        seu_numero: payload.seuNumero,
                         tenant_id: tenant.id,
                         method: 'pix_inter'
                     }
@@ -153,14 +147,12 @@ export async function POST(req: Request) {
                 success: true,
                 pending: true,
                 message: interBoleto.message,
+                seu_numero: payload.seuNumero,
                 amount: amount
             }));
         }
 
         const pixCopiaECola = interBoleto.pixCopiaECola || interBoleto.pix?.pixCopiaECola;
-
-        // Debug
-        console.log('[SAAS PIX] Code:', pixCopiaECola);
 
         if (!pixCopiaECola) {
             throw new Error(`DEBUG PIX: ${JSON.stringify(interBoleto).substring(0, 200)}...`);
@@ -170,15 +162,16 @@ export async function POST(req: Request) {
         await supabaseAdmin
             .from('finance')
             .insert({
-                tenant_id: null, // Receita do SaaS
+                tenant_id: null,
                 type: 'revenue',
                 value: amount,
                 description: `Pix SaaS Pendente - Plano ${plan} (${tenant.name})`,
                 date: currentDate,
                 is_paid: false,
                 metadata: {
-                    nosso_numero: interBoleto.nossoNumero,
+                    nosso_numero: interBoleto.nossoNumber || interBoleto.nossoNumero,
                     txid: interBoleto.codigoSolicitacao || interBoleto.txid || 'N/A',
+                    seu_numero: payload.seuNumero,
                     tenant_id: tenant.id,
                     method: 'pix_inter'
                 }
@@ -186,30 +179,13 @@ export async function POST(req: Request) {
 
         return addCorsHeaders(req, NextResponse.json({
             success: true,
-            pixPayload: pixCopiaECola || 'Pix indísponivel no momento, use o Boleto.',
+            pixPayload: pixCopiaECola,
             amount: amount,
             expiresAt: dueDateStr
         }));
 
     } catch (error: any) {
         console.error('[SAAS PIX CHECKOUT ERROR]', error);
-
-        let errorMessage = error.message;
-        try {
-            // Tenta extrair mensagem detalhada do Inter
-            if (errorMessage.includes('Inter Billing Error:')) {
-                const jsonPart = errorMessage.split('Inter Billing Error: ')[1];
-                const interError = JSON.parse(jsonPart);
-                if (interError.violacoes && interError.violacoes.length > 0) {
-                    errorMessage = `Banco Inter recusou: ${interError.violacoes[0].razao} (${interError.violacoes[0].valor})`;
-                } else if (interError.detail) {
-                    errorMessage = `Banco Inter: ${interError.detail}`;
-                }
-            }
-        } catch (e) {
-            // Falha ao parsear, mantem erro original
-        }
-
-        return addCorsHeaders(req, NextResponse.json({ error: errorMessage }, { status: 500 }));
+        return addCorsHeaders(req, NextResponse.json({ error: error.message }, { status: 500 }));
     }
 }

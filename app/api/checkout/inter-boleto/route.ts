@@ -21,7 +21,7 @@ export async function POST(req: Request) {
             return addCorsHeaders(req, NextResponse.json({ error: 'Não autenticado' }, { status: 401 }));
         }
 
-        const { plan, coupon } = await req.json();
+        const { plan, coupon, tempId } = await req.json();
         let amount = PLAN_PRICES[plan];
 
         if (!amount) {
@@ -102,7 +102,7 @@ export async function POST(req: Request) {
         }
 
         const payload = {
-            seuNumero: String(Date.now()).slice(-15), // Max 15 chars - use last 15 digits of timestamp
+            seuNumero: (tempId || String(Date.now())).slice(-15), // Max 15 chars
             pagador: {
                 cpfCnpj: doc,
                 tipoPessoa: doc.length > 11 ? "JURIDICA" : "FISICA",
