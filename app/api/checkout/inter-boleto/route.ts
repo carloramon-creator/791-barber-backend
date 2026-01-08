@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+// Trigger Build: 11:10 BRT - GOL FINAL ⚽
 import { getCurrentUserAndTenant, addCorsHeaders } from '@/app/lib/utils';
 import { supabaseAdmin } from '@/app/lib/supabase';
 import { InterAPIV3 } from '@/app/lib/inter-api-v3';
