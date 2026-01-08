@@ -145,6 +145,7 @@ export async function POST(req: Request) {
                     metadata: {
                         nosso_numero: 'PENDING',
                         txid: interBoleto.codigoSolicitacao || 'N/A',
+                        seu_numero: payload.seuNumero,
                         tenant_id: tenant.id,
                         method: 'boleto_inter'
                     }
@@ -179,6 +180,7 @@ export async function POST(req: Request) {
                 metadata: {
                     nosso_numero: interBoleto.nossoNumero,
                     txid: interBoleto.codigoSolicitacao || interBoleto.txid || 'N/A',
+                    seu_numero: payload.seuNumero,
                     tenant_id: tenant.id
                 }
             });

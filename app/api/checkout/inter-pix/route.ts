@@ -141,8 +141,9 @@ export async function POST(req: Request) {
                     date: currentDate,
                     is_paid: false,
                     metadata: {
-                        nosso_numero: 'PENDING', // Ainda não temos
+                        nosso_numero: 'PENDING',
                         txid: interBoleto.codigoSolicitacao || 'N/A',
+                        seu_numero: payload.seuNumero, // CRUCIAL para conciliação
                         tenant_id: tenant.id,
                         method: 'pix_inter'
                     }
