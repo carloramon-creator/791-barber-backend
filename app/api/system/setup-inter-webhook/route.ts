@@ -5,10 +5,17 @@ import { supabaseAdmin } from '@/app/lib/supabase';
 
 export async function GET(req: Request) {
     try {
-        const { isSystemAdmin } = await getCurrentUserAndTenant();
-        // Allow ONLY system admins to run this setup
-        if (!isSystemAdmin) {
-            return NextResponse.json({ error: 'Acesso Negado' }, { status: 403 });
+        const { user } = await getCurrentUserAndTenant();
+
+        // Verificar se é super admin no banco de dados
+        const { data: userData } = await supabaseAdmin
+            .from('users')
+            .select('is_system_admin')
+            .eq('id', user.id)
+            .single();
+
+        if (!userData || !userData.is_system_admin) {
+            return NextResponse.json({ error: 'Acesso Negado: Requer privilégios de Super Admin' }, { status: 403 });
         }
 
         const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
