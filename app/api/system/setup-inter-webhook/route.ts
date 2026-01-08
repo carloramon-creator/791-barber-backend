@@ -49,13 +49,35 @@ export async function GET(req: Request) {
         const pixKey = interConfig.pix_key;
 
         // Register both Boleto and Pix webhooks
-        const res1 = await inter.registerWebhook(webhookUrl, 'boleto');
-        const res2 = await inter.registerWebhook(webhookUrl, 'pix', pixKey);
+        // We do it separately and gracefully handle errors (especially for Pix which might be restricted)
+        const results = [];
+
+        try {
+            const res1 = await inter.registerWebhook(webhookUrl, 'boleto');
+            results.push({ type: 'boleto', success: true, detail: res1 });
+        } catch (e: any) {
+            console.error('[SETUP] Boleto Webhook Error:', e.message);
+            results.push({ type: 'boleto', success: false, error: e.message });
+        }
+
+        try {
+            if (pixKey) {
+                const res2 = await inter.registerWebhook(webhookUrl, 'pix', pixKey);
+                results.push({ type: 'pix', success: true, detail: res2 });
+            } else {
+                results.push({ type: 'pix', success: false, error: 'Chave Pix não configurada' });
+            }
+        } catch (e: any) {
+            console.warn('[SETUP] Pix Webhook Error (expected if account < 6 months):', e.message);
+            results.push({ type: 'pix', success: false, error: 'Pix não disponível ou não autorizado (Pode requerer 6 meses de CNPJ)' });
+        }
+
+        const anySuccess = results.some(r => r.success);
 
         return NextResponse.json({
-            success: true,
+            success: anySuccess,
             registeredUrl: webhookUrl,
-            details: [res1, res2]
+            details: results
         });
 
     } catch (error: any) {
