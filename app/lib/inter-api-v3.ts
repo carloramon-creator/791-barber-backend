@@ -118,7 +118,7 @@ export class InterAPIV3 {
                 cert: this.config.cert,
                 key: this.config.key,
                 rejectUnauthorized: false,
-                family: 4
+                family: 4 // Force IPv4
             };
 
             const initialResponse = await this.makeRequest(options, body);
@@ -129,42 +129,48 @@ export class InterAPIV3 {
             }
 
             // Se for assíncrono (só codigoSolicitacao), precisamos buscar os detalhes
-            console.log('[INTER V3] Async response received, fetching details...', initialResponse);
-
-            // Aguarda 1.5s para processamento (aumentei um pouco)
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            console.log('[INTER V3] Async response received, fetching details with retry logic...', initialResponse);
 
             const today = new Date().toISOString().split('T')[0];
+            const maxRetries = 3;
 
-            // Buscar pelo seuNumero COM datas obrigatórias
-            // Endpoint: GET /cobranca/v3/cobrancas?seuNumero={seuNumero}&dataInicial={today}&dataFinal={today}
-            const searchOptions: https.RequestOptions = {
-                hostname: 'cdpj.partners.bancointer.com.br',
-                port: 443,
-                path: `/cobranca/v3/cobrancas?seuNumero=${payload.seuNumero}&dataInicial=${today}&dataFinal=${today}`,
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                },
-                cert: this.config.cert,
-                key: this.config.key,
-                rejectUnauthorized: false,
-                family: 4
-            };
+            for (let i = 0; i < maxRetries; i++) {
+                // Backoff: 2s, 4s, 6s
+                const waitTime = (i + 1) * 2000;
+                console.log(`[INTER V3] Attempt ${i + 1}/${maxRetries} - Waiting ${waitTime}ms...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
 
-            const searchResponse = await this.makeRequest(searchOptions);
+                const searchOptions: https.RequestOptions = {
+                    hostname: 'cdpj.partners.bancointer.com.br',
+                    port: 443,
+                    path: `/cobranca/v3/cobrancas?seuNumero=${payload.seuNumero}&dataInicial=${today}&dataFinal=${today}`,
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    cert: this.config.cert,
+                    key: this.config.key,
+                    rejectUnauthorized: false,
+                    family: 4
+                };
 
-            // A busca retorna uma lista (paginada) ou um array direct
-            // A estrutura geralmente é: { content: [ ... ] } ou [ ... ]
-            const cobrancas = searchResponse.cobrancas || searchResponse.content || searchResponse; // Tenta se adaptar
+                try {
+                    const searchResponse = await this.makeRequest(searchOptions);
+                    console.log(`[INTER V3] Search Response (Attempt ${i + 1}):`, JSON.stringify(searchResponse));
 
-            if (Array.isArray(cobrancas) && cobrancas.length > 0) {
-                const cobrancaCompleta = cobrancas[0];
-                console.log('[INTER V3] Fetched full billing details:', cobrancaCompleta.nossoNumero);
-                return cobrancaCompleta;
+                    const cobrancas = searchResponse.cobrancas || searchResponse.content || searchResponse;
+
+                    if (Array.isArray(cobrancas) && cobrancas.length > 0) {
+                        const cobrancaCompleta = cobrancas[0];
+                        if (cobrancaCompleta.nossoNumero) {
+                            console.log('[INTER V3] Fetched full billing details:', cobrancaCompleta.nossoNumero);
+                            return cobrancaCompleta;
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[INTER V3] Search attempt ${i + 1} failed:`, e);
+                }
             }
 
-            // Se não achou na busca, retorna a resposta inicial limitada
+            console.warn('[INTER V3] Billing not found via search after retries. Returning initial response.');
             return initialResponse;
 
         } catch (error: any) {
