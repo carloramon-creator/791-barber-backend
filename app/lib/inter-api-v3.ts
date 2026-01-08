@@ -131,4 +131,38 @@ export class InterAPIV3 {
             throw new Error(`Inter Billing Error: ${JSON.stringify(error)}`);
         }
     }
+
+    async getBillingPdf(nossoNumero: string): Promise<Buffer> {
+        const token = await this.getAccessToken();
+
+        console.log(`[INTER V3] Fetching PDF for billing: ${nossoNumero}`);
+
+        try {
+            const options: https.RequestOptions = {
+                hostname: 'cdpj.partners.bancointer.com.br',
+                port: 443,
+                path: `/cobranca/v3/cobrancas/${nossoNumero}/pdf`,
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                cert: this.config.cert,
+                key: this.config.key,
+                rejectUnauthorized: false,
+                family: 4 // Force IPv4
+            };
+
+            const data = await this.makeRequest(options);
+
+            if (data && data.pdf) {
+                console.log('[INTER V3] PDF fetched successfully');
+                return Buffer.from(data.pdf, 'base64');
+            } else {
+                throw new Error('PDF data not found in response');
+            }
+        } catch (error: any) {
+            console.error('[INTER V3] PDF Error:', error);
+            throw new Error(`Inter PDF Error: ${JSON.stringify(error)}`);
+        }
+    }
 }
