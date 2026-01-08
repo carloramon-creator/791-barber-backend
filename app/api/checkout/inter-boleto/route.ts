@@ -79,8 +79,8 @@ export async function POST(req: Request) {
         });
 
         // Garantir documento limpo
-        // Tenta pegar CNPJ do tenant, ou CPF do tenant (se tiver)
-        let doc = (tenant.cnpj || tenant.cpf || tenant.document || "").replace(/\D/g, '');
+        // Tenta pegar CNPJ do tenant, ou CPF do tenant, ou o documento da conta bancária
+        let doc = (tenant.cnpj || tenant.cpf || tenant.document || tenant.bank_account_doc || tenant.cpf_cnpj || "").replace(/\D/g, '');
 
         // Se não achou no tenant, busca no usuário logado
         if (!doc) {
