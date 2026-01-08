@@ -6,7 +6,7 @@ export async function OPTIONS(req: Request) {
     return addCorsHeaders(req, new NextResponse(null, { status: 200 }));
 }
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { user } = await getCurrentUserAndTenant();
 
@@ -23,8 +23,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
         const body = await req.json();
         // Em Next 15, params pode ser promise awaitable
-        const resolvedParams = await params as any;
-        const tenantId = resolvedParams?.id || resolvedParams;
+        const { id: tenantId } = await params;
 
         // Validar campos permitidos para segurança
         const allowedFields = ['plan', 'subscription_status', 'trial_ends_at', 'name', 'active'];
@@ -59,7 +58,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
 }
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { user } = await getCurrentUserAndTenant();
 
@@ -73,8 +72,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
             return addCorsHeaders(req, NextResponse.json({ error: 'Acesso negado' }, { status: 403 }));
         }
 
-        const resolvedParams = await params as any;
-        const tenantId = resolvedParams?.id || resolvedParams;
+        const { id: tenantId } = await params;
 
         console.log(`[SYSTEM] Admin ${user.id} deleting tenant ${tenantId}`);
 
