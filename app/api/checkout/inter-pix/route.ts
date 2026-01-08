@@ -135,6 +135,10 @@ export async function POST(req: Request) {
         console.log('[SAAS PIX] Resposta Inter:', JSON.stringify(interBoleto));
         console.log('[SAAS PIX] Code:', pixCopiaECola);
 
+        if (!pixCopiaECola) {
+            throw new Error(`DEBUG PIX: ${JSON.stringify(interBoleto).substring(0, 200)}...`);
+        }
+
         // 5. Salvar registro local
         await supabaseAdmin
             .from('finance')

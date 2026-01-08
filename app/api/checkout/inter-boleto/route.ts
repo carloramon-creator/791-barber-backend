@@ -133,7 +133,9 @@ export async function POST(req: Request) {
         const nossoNumero = interBoleto.nossoNumero;
 
         if (!nossoNumero) {
-            throw new Error('O Banco Inter não retornou o Nosso Número do boleto. Tente novamente.');
+            // DEBUG: Mostrar o que veio de volta para sabermos onde está o campo
+            console.error('Resposta sem nossoNumero:', JSON.stringify(interBoleto));
+            throw new Error(`DEBUG INTER: ${JSON.stringify(interBoleto).substring(0, 200)}...`);
         }
 
         // 5. Salvar registro local
