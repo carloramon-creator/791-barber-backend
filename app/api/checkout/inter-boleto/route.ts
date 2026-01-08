@@ -157,6 +157,23 @@ export async function POST(req: Request) {
 
     } catch (error: any) {
         console.error('[SAAS BOLETO CHECKOUT ERROR]', error);
-        return addCorsHeaders(req, NextResponse.json({ error: error.message }, { status: 500 }));
+
+        let errorMessage = error.message;
+        try {
+            // Tenta extrair mensagem detalhada do Inter
+            if (errorMessage.includes('Inter Billing Error:')) {
+                const jsonPart = errorMessage.split('Inter Billing Error: ')[1];
+                const interError = JSON.parse(jsonPart);
+                if (interError.violacoes && interError.violacoes.length > 0) {
+                    errorMessage = `Banco Inter recusou: ${interError.violacoes[0].razao} (${interError.violacoes[0].valor})`;
+                } else if (interError.detail) {
+                    errorMessage = `Banco Inter: ${interError.detail}`;
+                }
+            }
+        } catch (e) {
+            // Falha ao parsear, mantem erro original
+        }
+
+        return addCorsHeaders(req, NextResponse.json({ error: errorMessage }, { status: 500 }));
     }
 }
