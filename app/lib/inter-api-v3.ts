@@ -146,8 +146,8 @@ export class InterAPIV3 {
             const maxRetries = 5; // Aumentei para 5 tentativas
 
             for (let i = 0; i < maxRetries; i++) {
-                // Backoff: Começa rápido (1s) e aumenta
-                const waitTime = 1000 + (i * 1000);
+                // Backoff: Começa com 3s e aumenta 2s a cada tentativa
+                const waitTime = 3000 + (i * 2000);
                 console.log(`[INTER V3] Attempt ${i + 1}/${maxRetries} - Waiting ${waitTime}ms...`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
 
@@ -187,8 +187,22 @@ export class InterAPIV3 {
             throw new Error('O processamento do boleto está demorando mais que o normal. Por favor, tente novamente em alguns instantes. (Timeout na busca de retorno)');
 
         } catch (error: any) {
-            console.error('[INTER V3] Billing Error:', error);
-            throw new Error(`Inter Billing Error: ${JSON.stringify(error)}`);
+            console.error('[INTER V3] Billing Error (RAW):', error);
+
+            let errorMsg = 'Unknown Error';
+            if (error instanceof Error) {
+                errorMsg = error.message;
+            } else if (typeof error === 'object') {
+                try {
+                    errorMsg = JSON.stringify(error);
+                } catch {
+                    errorMsg = String(error);
+                }
+            } else {
+                errorMsg = String(error);
+            }
+
+            throw new Error(`Inter Billing Error: ${errorMsg}`);
         }
     }
 
