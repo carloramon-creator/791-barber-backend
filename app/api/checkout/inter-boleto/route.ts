@@ -102,7 +102,7 @@ export async function POST(req: Request) {
         }
 
         const payload = {
-            seuNumero: (tempId || String(Date.now())).slice(-15), // Max 15 chars
+            seuNumero: tempId || String(Date.now()).slice(-15), // Usa o ID vindo do frontend sem cortes extras
             pagador: {
                 cpfCnpj: doc,
                 tipoPessoa: doc.length > 11 ? "JURIDICA" : "FISICA",

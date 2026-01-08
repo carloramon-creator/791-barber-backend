@@ -98,7 +98,7 @@ export async function POST(req: Request) {
         });
 
         const payload = {
-            seuNumero: (tempId || String(Date.now())).slice(-15),
+            seuNumero: tempId || String(Date.now()).slice(-15),
             pagador: {
                 cpfCnpj: doc,
                 tipoPessoa: doc.length > 11 ? "JURIDICA" : "FISICA",
