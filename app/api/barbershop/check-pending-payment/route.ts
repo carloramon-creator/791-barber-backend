@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUserAndTenant, addCorsHeaders } from '@/app/lib/utils';
 import { supabaseAdmin } from '@/app/lib/supabase';
+import { InterAPIV3 } from '@/app/lib/inter-api-v3';
 
 export async function OPTIONS(req: Request) {
     return addCorsHeaders(req, new NextResponse(null, { status: 200 }));
@@ -14,59 +15,71 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url);
         const seuNumero = searchParams.get('seuNumero');
 
-        if (!seuNumero) {
-            return addCorsHeaders(req, NextResponse.json({ error: 'seuNumero ausente' }, { status: 400 }));
-        }
+        if (!seuNumero) return addCorsHeaders(req, NextResponse.json({ error: 'seuNumero ausente' }, { status: 400 }));
 
-        // Busca o registro no financeiro que coincida com o seuNumero e o tenant_id (segurança)
-        const { data: charge, error } = await supabaseAdmin
+        // 1. Busca rápida no banco local
+        const { data: charge } = await supabaseAdmin
             .from('finance')
             .select('*')
             .eq('metadata->>seu_numero', seuNumero)
-            .eq('metadata->>tenant_id', tenant.id)
             .maybeSingle();
 
-        if (error) throw error;
+        if (!charge) return addCorsHeaders(req, NextResponse.json({ ready: false }));
 
-        // Se o registro mudou de "PENDING" para um Nosso Número real, significa que o banco processou.
-        let isReady = charge && charge.metadata?.nosso_numero !== 'PENDING' && charge.metadata?.nosso_numero !== undefined;
+        // Se já tem nosso_numero real, já está pronto
+        let isReady = charge.metadata?.nosso_numero && charge.metadata.nosso_numero !== 'PENDING';
 
-        if (!isReady && charge) {
-            console.log('[POLLING] Checking Inter for PENDING record...');
+        // 2. Se ainda está pendente localmente, vamos forçar uma busca no Inter
+        if (!isReady) {
             const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
             const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
+
             if (process.env.INTER_CLIENT_ID && cert && key) {
-                const { InterAPIV3 } = require('@/app/lib/inter-api-v3');
-                const inter = new InterAPIV3({ clientId: process.env.INTER_CLIENT_ID, clientSecret: process.env.INTER_CLIENT_SECRET || '', cert, key });
+                const inter = new InterAPIV3({
+                    clientId: process.env.INTER_CLIENT_ID,
+                    clientSecret: process.env.INTER_CLIENT_SECRET || '',
+                    cert, key
+                });
+
                 const now = new Date();
-                const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
-                const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
+                const dInit = new Date(now); dInit.setDate(dInit.getDate() - 1);
+                const dEnd = new Date(now); dEnd.setDate(dEnd.getDate() + 1);
+
                 try {
                     const token = await inter.getAccessToken();
-                    const path = `/cobranca/v3/cobrancas?seuNumero=${seuNumero}&dataInicial=${yesterday.toISOString().split('T')[0]}&dataFinal=${tomorrow.toISOString().split('T')[0]}`;
-                    const response = await inter.makeRequest({ hostname: 'cdpj.partners.bancointer.com.br', port: 443, path, method: 'GET', headers: { 'Authorization': `Bearer ${token}` }, cert, key, rejectUnauthorized: false, family: 4 });
-                    const cobrancas = response.cobrancas || response.content || [];
-                    if (Array.isArray(cobrancas) && cobrancas.length > 0) {
-                        const info = cobrancas[0];
-                        if (info.nossoNumero) {
-                            const updatedMetadata = { ...charge.metadata, nosso_numero: info.nossoNumero, codigo_barras: info.codigoBarras, linha_digitavel: info.linhaDigitavel };
-                            await supabaseAdmin.from('finance').update({ metadata: updatedMetadata }).eq('id', charge.id);
-                            charge.metadata = updatedMetadata;
+                    const path = `/cobranca/v3/cobrancas?seuNumero=${seuNumero}&dataInicial=${dInit.toISOString().split('T')[0]}&dataFinal=${dEnd.toISOString().split('T')[0]}`;
+
+                    const response = await inter.makeRequest({
+                        hostname: 'cdpj.partners.bancointer.com.br',
+                        port: 443,
+                        path, method: 'GET',
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        cert, key, rejectUnauthorized: false, family: 4
+                    });
+
+                    const items = response.cobrancas || response.content || [];
+                    if (Array.isArray(items) && items.length > 0) {
+                        const item = items[0];
+                        if (item.nossoNumero) {
+                            const meta = { ...charge.metadata, nosso_numero: item.nossoNumero, codigo_barras: item.codigoBarras, linha_digitavel: item.linhaDigitavel };
+                            await supabaseAdmin.from('finance').update({ metadata: meta }).eq('id', charge.id);
+                            charge.metadata = meta;
                             isReady = true;
                         }
                     }
-                } catch (e) { console.error('[POLLING INTER CHECK ERROR]', e); }
+                } catch (e) {
+                    console.error('[POLLING ERROR]', e);
+                }
             }
         }
 
         if (isReady) {
             const isPix = charge.metadata.method === 'pix_inter';
-
             return addCorsHeaders(req, NextResponse.json({
                 ready: true,
                 type: isPix ? 'pix' : 'boleto',
                 payload: isPix ? {
-                    pixPayload: charge.metadata.pix_payload,
+                    pixPayload: charge.metadata.pix_payload || charge.metadata.linha_digitavel, // Fallback
                     amount: charge.value,
                     expiresAt: charge.metadata.expires_at
                 } : {
@@ -81,7 +94,6 @@ export async function GET(req: Request) {
         return addCorsHeaders(req, NextResponse.json({ ready: false }));
 
     } catch (error: any) {
-        console.error('[POLLING CHECK ERROR]', error);
         return addCorsHeaders(req, NextResponse.json({ error: error.message }, { status: 500 }));
     }
 }
