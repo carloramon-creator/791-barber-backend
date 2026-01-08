@@ -131,19 +131,30 @@ export class InterAPIV3 {
             // Se for assíncrono (só codigoSolicitacao), precisamos buscar os detalhes
             console.log('[INTER V3] Async response received, fetching details with retry logic...', initialResponse);
 
-            const today = new Date().toISOString().split('T')[0];
-            const maxRetries = 3;
+            // Ajuste de Fuso Horário: Buscar de ONTEM até AMANHÃ para evitar erros de servidor UTC vs BRT
+            const now = new Date();
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 2);
+            const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 2);
+            const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+            console.log(`[INTER V3] Searching Date Range: ${yesterdayStr} to ${tomorrowStr}`);
+
+            const maxRetries = 5; // Aumentei para 5 tentativas
 
             for (let i = 0; i < maxRetries; i++) {
-                // Backoff: 2s, 4s, 6s
-                const waitTime = (i + 1) * 2000;
+                // Backoff: Começa rápido (1s) e aumenta
+                const waitTime = 1000 + (i * 1000);
                 console.log(`[INTER V3] Attempt ${i + 1}/${maxRetries} - Waiting ${waitTime}ms...`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
 
                 const searchOptions: https.RequestOptions = {
                     hostname: 'cdpj.partners.bancointer.com.br',
                     port: 443,
-                    path: `/cobranca/v3/cobrancas?seuNumero=${payload.seuNumero}&dataInicial=${today}&dataFinal=${today}`,
+                    path: `/cobranca/v3/cobrancas?seuNumero=${payload.seuNumero}&dataInicial=${yesterdayStr}&dataFinal=${tomorrowStr}`,
                     method: 'GET',
                     headers: { 'Authorization': `Bearer ${token}` },
                     cert: this.config.cert,
@@ -154,12 +165,12 @@ export class InterAPIV3 {
 
                 try {
                     const searchResponse = await this.makeRequest(searchOptions);
-                    console.log(`[INTER V3] Search Response (Attempt ${i + 1}):`, JSON.stringify(searchResponse));
 
                     const cobrancas = searchResponse.cobrancas || searchResponse.content || searchResponse;
 
                     if (Array.isArray(cobrancas) && cobrancas.length > 0) {
                         const cobrancaCompleta = cobrancas[0];
+                        // Garantir que tem nossoNumero antes de retornar
                         if (cobrancaCompleta.nossoNumero) {
                             console.log('[INTER V3] Fetched full billing details:', cobrancaCompleta.nossoNumero);
                             return cobrancaCompleta;
@@ -170,8 +181,10 @@ export class InterAPIV3 {
                 }
             }
 
-            console.warn('[INTER V3] Billing not found via search after retries. Returning initial response.');
-            return initialResponse;
+            console.error('[INTER V3] Billing not found via search after ALL retries.');
+
+            // Retorna erro explícito se falhar, para o frontend mostrar "Tente novamente" em vez de undefined
+            throw new Error('O processamento do boleto está demorando mais que o normal. Por favor, tente novamente em alguns instantes. (Timeout na busca de retorno)');
 
         } catch (error: any) {
             console.error('[INTER V3] Billing Error:', error);
