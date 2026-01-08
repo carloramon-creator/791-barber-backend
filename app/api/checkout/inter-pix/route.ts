@@ -128,11 +128,37 @@ export async function POST(req: Request) {
         console.log('[SAAS PIX] Criando cobrança Pix no Inter...');
         const interBoleto = await inter.createBilling(payload);
 
-        // Na V3, o pixCopiaECola pode vir dentro do objeto 'pix'
+        // Check for pending processing
+        if (interBoleto.pending_processing) {
+            // Salvar como pendente
+            await supabaseAdmin
+                .from('finance')
+                .insert({
+                    tenant_id: null,
+                    type: 'revenue',
+                    value: amount,
+                    description: `Pix SaaS Pendente (Processando) - Plano ${plan} (${tenant.name})`,
+                    date: currentDate,
+                    is_paid: false,
+                    metadata: {
+                        nosso_numero: 'PENDING', // Ainda não temos
+                        txid: interBoleto.codigoSolicitacao || 'N/A',
+                        tenant_id: tenant.id,
+                        method: 'pix_inter'
+                    }
+                });
+
+            return addCorsHeaders(req, NextResponse.json({
+                success: true,
+                pending: true,
+                message: interBoleto.message,
+                amount: amount
+            }));
+        }
+
         const pixCopiaECola = interBoleto.pixCopiaECola || interBoleto.pix?.pixCopiaECola;
 
         // Debug
-        console.log('[SAAS PIX] Resposta Inter:', JSON.stringify(interBoleto));
         console.log('[SAAS PIX] Code:', pixCopiaECola);
 
         if (!pixCopiaECola) {

@@ -130,6 +130,34 @@ export async function POST(req: Request) {
         const interBoleto = await inter.createBilling(payload);
         console.log('[SAAS BOLETO] Resposta Inter:', JSON.stringify(interBoleto));
 
+        // Check for pending processing
+        if (interBoleto.pending_processing) {
+            // Salvar como pendente
+            await supabaseAdmin
+                .from('finance')
+                .insert({
+                    tenant_id: null,
+                    type: 'revenue',
+                    value: amount,
+                    description: `Boleto SaaS Pendente (Processando) - Plano ${plan} (${tenant.name})`,
+                    date: currentDate,
+                    is_paid: false,
+                    metadata: {
+                        nosso_numero: 'PENDING',
+                        txid: interBoleto.codigoSolicitacao || 'N/A',
+                        tenant_id: tenant.id,
+                        method: 'boleto_inter'
+                    }
+                });
+
+            return addCorsHeaders(req, NextResponse.json({
+                success: true,
+                pending: true,
+                message: interBoleto.message,
+                amount: amount
+            }));
+        }
+
         const nossoNumero = interBoleto.nossoNumero;
 
         if (!nossoNumero) {

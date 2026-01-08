@@ -143,7 +143,7 @@ export class InterAPIV3 {
 
             console.log(`[INTER V3] Searching Date Range: ${yesterdayStr} to ${tomorrowStr}`);
 
-            const maxRetries = 5; // Aumentei para 5 tentativas
+            const maxRetries = 5; // 5 tentativas
 
             for (let i = 0; i < maxRetries; i++) {
                 // Backoff: Começa com 3s e aumenta 2s a cada tentativa
@@ -181,10 +181,15 @@ export class InterAPIV3 {
                 }
             }
 
-            console.error('[INTER V3] Billing not found via search after ALL retries.');
+            console.warn('[INTER V3] Billing not found via search after ALL retries. Returning pending status.');
 
-            // Retorna erro explícito se falhar, para o frontend mostrar "Tente novamente" em vez de undefined
-            throw new Error('O processamento do boleto está demorando mais que o normal. Por favor, tente novamente em alguns instantes. (Timeout na busca de retorno)');
+            // Retorna sucesso PARCIAL para não travar o fluxo
+            return {
+                pending_processing: true,
+                seuNumero: payload.seuNumero,
+                codigoSolicitacao: initialResponse.codigoSolicitacao,
+                message: 'Processamento do documento em andamento no banco.'
+            };
 
         } catch (error: any) {
             console.error('[INTER V3] Billing Error (RAW):', error);
