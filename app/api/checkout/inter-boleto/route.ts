@@ -131,7 +131,7 @@ export async function POST(req: Request) {
         console.log('[SAAS BOLETO] Resposta Inter:', JSON.stringify(interBoleto));
 
         // Check for pending processing
-        if (interBoleto.pending_processing) {
+        if (interBoleto.pending_processing || interBoleto.codigoSolicitacao) {
             // Salvar como pendente
             await supabaseAdmin
                 .from('finance')

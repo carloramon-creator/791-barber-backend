@@ -123,7 +123,7 @@ export async function POST(req: Request) {
         const interBoleto = await inter.createBilling(payload);
 
         // Check for pending processing
-        if (interBoleto.pending_processing) {
+        if (interBoleto.pending_processing || interBoleto.codigoSolicitacao) {
             // Salvar como pendente
             await supabaseAdmin
                 .from('finance')
