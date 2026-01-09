@@ -1,0 +1,13 @@
+[build]
+builder = "nixpacks"
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "npm start"
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 5
+
+[service]
+schedule = "0 * * * *" # Exemplo de cron se necessário
+memory = "256MB" # Limitando memória para economizar seu dinheiro
+cpu = 0.1 # Limitando CPU para economizar

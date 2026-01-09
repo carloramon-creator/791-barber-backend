@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from './supabase';
 import { Plan } from './types';
 
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mfb1wvhxztejuzcasclv.supabase.co';
+
 export async function getCurrentUserAndTenant() {
     try {
         console.log('[BACKEND] getCurrentUserAndTenant start');
