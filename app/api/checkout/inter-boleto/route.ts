@@ -58,17 +58,28 @@ export async function POST(req: Request) {
         dueDate.setDate(dueDate.getDate() + 3);
         const dueDateStr = dueDate.toISOString().split('T')[0];
 
-        // 2. Configurar Inter
-        const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
-        const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
+        // 2. Configurar Inter - Buscar do DB primeiro
+        const { data: settingsData } = await supabaseAdmin
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'inter_config')
+            .single();
 
-        if (!process.env.INTER_CLIENT_ID || !cert || !key) {
+        const dbConfig = settingsData?.value;
+        const clientId = dbConfig?.client_id || process.env.INTER_CLIENT_ID;
+        const certRaw = dbConfig?.crt || process.env.INTER_CERT_CONTENT || '';
+        const keyRaw = dbConfig?.key || process.env.INTER_KEY_CONTENT || '';
+
+        const cert = certRaw.replace(/\\n/g, '\n');
+        const key = keyRaw.replace(/\\n/g, '\n');
+
+        if (!clientId || !cert || !key) {
             return addCorsHeaders(req, NextResponse.json({ error: 'Configuração do Inter incompleta' }, { status: 500 }));
         }
 
         const inter = new InterAPIV3({
-            clientId: process.env.INTER_CLIENT_ID,
-            clientSecret: process.env.INTER_CLIENT_SECRET || '',
+            clientId,
+            clientSecret: dbConfig?.client_secret || process.env.INTER_CLIENT_SECRET || '',
             cert, key
         });
 
@@ -109,6 +120,10 @@ export async function POST(req: Request) {
         console.log('[INTER] Criando boleto...');
         let interRes = await inter.createBilling(payload);
 
+        // A AP V3 do Inter pode demorar um pouco para gerar o nossoNumero
+        const nossoNumero = interRes.nossoNumero || interRes.identificador;
+        const isReady = !!nossoNumero;
+
         // 4. Salvar registro local
         console.log('[INTER] Salvando registro local...');
         await supabaseAdmin
@@ -121,7 +136,7 @@ export async function POST(req: Request) {
                 date: currentDate,
                 is_paid: false,
                 metadata: {
-                    nosso_numero: interRes.nossoNumero || 'PENDING',
+                    nosso_numero: nossoNumero || 'PENDING',
                     txid: interRes.codigoSolicitacao || interRes.txid || 'N/A',
                     seu_numero: seuNumero,
                     tenant_id: tenant.id,
@@ -135,11 +150,11 @@ export async function POST(req: Request) {
         return addCorsHeaders(req, NextResponse.json({
             success: true,
             pending: !isReady,
-            nossoNumero: interRes.nossoNumero,
+            nossoNumero: nossoNumero,
             codigoBarras: interRes.codigoBarras,
             linhaDigitavel: interRes.linhaDigitavel,
             amount: amount,
-            pdfUrl: interRes.nossoNumero ? `https://api.791barber.com/api/checkout/inter-boleto/pdf?nossoNumero=${interRes.nossoNumero}` : null
+            pdfUrl: nossoNumero ? `https://api.791barber.com/api/checkout/inter-boleto/pdf?nossoNumero=${nossoNumero}` : null
         }));
 
     } catch (error: any) {
