@@ -1,9 +1,7 @@
 import { cookies, headers } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from './supabase';
+import { supabase, supabaseAdmin } from './supabase';
 import { Plan } from './types';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mfb1wvhxztejuzcasclv.supabase.co';
 
 export async function getCurrentUserAndTenant() {
     try {
@@ -11,19 +9,26 @@ export async function getCurrentUserAndTenant() {
 
         let userAuthId: string | null = null;
 
-        // 1. Tentar pegar token do Header (Authorization: Bearer <token>)
-        const headersList = await headers();
-        const authHeader = headersList.get('authorization');
+        // 1. Tentar pegar via standard client (mais robusto para token/cookies)
+        const client = await supabase();
+        const { data: { user }, error: authError } = await client.auth.getUser();
 
-        if (authHeader && authHeader.startsWith('Bearer ')) {
-            const token = authHeader.substring(7);
-            console.log('[BACKEND] Token encontrado no header Authorization');
-            const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-            if (!authError && user) {
-                userAuthId = user.id;
-                console.log('[BACKEND] Token de header validado com sucesso. User:', user.id);
-            } else {
-                console.warn('[BACKEND] Token de header inválido ou expirado:', authError?.message);
+        if (!authError && user) {
+            userAuthId = user.id;
+            console.log('[BACKEND] User validado via standard client. ID:', user.id);
+        } else {
+            console.warn('[BACKEND] Falha na validação via client standard:', authError?.message);
+
+            // Fallback manual se o standard falhar por algum motivo de header
+            const headersList = await headers();
+            const authHeader = headersList.get('authorization');
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                const token = authHeader.substring(7);
+                const { data: { user: adminUser }, error: adminError } = await supabaseAdmin.auth.getUser(token);
+                if (!adminError && adminUser) {
+                    userAuthId = adminUser.id;
+                    console.log('[BACKEND] User validado via fallback admin. ID:', adminUser.id);
+                }
             }
         }
 
@@ -92,10 +97,10 @@ export async function getCurrentUserAndTenant() {
         }
 
         console.log('[BACKEND] Tenant found:', tenant.name, 'Plan:', tenant.plan);
-        const user = { id: userAuthId };
+        const finalUser = { id: userAuthId };
 
         return {
-            user,
+            user: finalUser,
             tenant,
             role: userData.role, // Mantendo por compatibilidade temporária
             roles: userData.roles || [userData.role], // Novo padrão
