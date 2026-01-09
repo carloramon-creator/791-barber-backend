@@ -8,60 +8,54 @@ export async function getCurrentUserAndTenant() {
         console.log('[BACKEND] getCurrentUserAndTenant start');
 
         let userAuthId: string | null = null;
+        const headersList = await headers();
+        const authHeader = headersList.get('authorization');
 
-        // 1. Tentar pegar via standard client (mais robusto para token/cookies)
+        console.log('[BACKEND-AUTH] Início da validação. Header:', !!authHeader);
+
         const client = await supabase();
         const { data: { user }, error: authError } = await client.auth.getUser();
 
         if (!authError && user) {
             userAuthId = user.id;
-            console.log('[BACKEND] User validado via standard client. ID:', user.id);
+            console.log('[BACKEND-AUTH] Validado via standard client:', user.id);
         } else {
-            console.warn('[BACKEND] Falha na validação via client standard:', authError?.message);
-
-            // Fallback manual se o standard falhar por algum motivo de header
-            const headersList = await headers();
-            const authHeader = headersList.get('authorization');
-            if (authHeader && authHeader.startsWith('Bearer ')) {
+            if (authHeader?.startsWith('Bearer ')) {
                 const token = authHeader.substring(7);
-                const { data: { user: adminUser }, error: adminError } = await supabaseAdmin.auth.getUser(token);
-                if (!adminError && adminUser) {
+                const { data: { user: adminUser }, error } = await supabaseAdmin.auth.getUser(token);
+                if (adminUser) {
                     userAuthId = adminUser.id;
-                    console.log('[BACKEND] User validado via fallback admin. ID:', adminUser.id);
+                    console.log('[BACKEND-AUTH] Validado via Header Admin:', userAuthId);
                 }
             }
         }
 
-        // 2. Se não achou no header, tentar cookies (fallback)
         if (!userAuthId) {
-            console.log('[BACKEND] Header auth falhou ou ausente. Tentando cookies...');
+            console.log('[BACKEND-AUTH] Tentando Cookies...');
             const cookieStore = await cookies();
-            const allCookies = cookieStore.getAll();
-
-            let sessionData: any = null;
-            for (const cookie of allCookies) {
+            for (const cookie of cookieStore.getAll()) {
                 if (cookie.name.includes('session') || cookie.name.includes('sb-')) {
                     try {
-                        sessionData = JSON.parse(decodeURIComponent(cookie.value));
-                        if (sessionData?.user?.id) {
-                            console.log('[BACKEND] Sessão válida encontrada em cookie:', cookie.name);
+                        const data = JSON.parse(decodeURIComponent(cookie.value));
+                        const token = data?.access_token || data?.token;
+                        if (token) {
+                            const { data: { user: cUser } } = await supabaseAdmin.auth.getUser(token);
+                            if (cUser) {
+                                userAuthId = cUser.id;
+                                console.log('[BACKEND-AUTH] Validado via Cookie:', cookie.name);
+                                break;
+                            }
+                        } else if (data?.user?.id) {
+                            userAuthId = data.user.id;
                             break;
                         }
-                    } catch (e) {
-                        continue;
-                    }
+                    } catch (e) { }
                 }
-            }
-
-            if (sessionData && sessionData.user) {
-                userAuthId = sessionData.user.id;
-            } else {
-                console.log('[BACKEND] Nenhuma sessão válida encontrada nos cookies.');
             }
         }
 
         if (!userAuthId) {
-            console.error('[BACKEND] Falha total de autenticação (sem header válido, sem cookie válido)');
+            console.error('[BACKEND-AUTH] FALHA CRÍTICA: Sem sessão.');
             throw new Error('Usuário não autenticado ou sessão expirada');
         }
 
