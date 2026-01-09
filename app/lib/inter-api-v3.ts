@@ -1,3 +1,4 @@
+
 import * as https from 'https';
 
 interface InterConfigV3 {
@@ -87,9 +88,48 @@ export class InterAPIV3 {
         };
 
         const response = await this.makeRequest(options, body);
-
-        // Retorna imediatamente. Se for síncrono, vem os dados. Se for assíncrono, vem codigoSolicitacao.
         return response;
+    }
+
+    async getBillingBySolicitacao(codigoSolicitacao: string) {
+        const token = await this.getAccessToken();
+        const options: https.RequestOptions = {
+            hostname: 'cdpj.partners.bancointer.com.br',
+            port: 443,
+            path: `/cobranca/v3/cobrancas/${codigoSolicitacao}`,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+            cert: this.config.cert,
+            key: this.config.key,
+            rejectUnauthorized: false,
+            family: 4,
+            timeout: 10000
+        };
+
+        return await this.makeRequest(options);
+    }
+
+    async listBillings(startDate: string, endDate: string, extraParams: string = '') {
+        const token = await this.getAccessToken();
+        const options: https.RequestOptions = {
+            hostname: 'cdpj.partners.bancointer.com.br',
+            port: 443,
+            path: `/cobranca/v3/cobrancas?dataInicial=${startDate}&dataFinal=${endDate}${extraParams}`,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+            cert: this.config.cert,
+            key: this.config.key,
+            rejectUnauthorized: false,
+            family: 4
+        };
+
+        return await this.makeRequest(options);
     }
 
     async registerWebhook(webhookUrl: string, type: 'boleto' | 'pix', pixKey?: string) {
@@ -141,11 +181,22 @@ export class InterAPIV3 {
                     if (res.statusCode === 200) {
                         resolve(Buffer.concat(chunks));
                     } else {
-                        reject(new Error(`Erro ao baixar PDF: ${res.statusCode}`));
+                        const errorBody = Buffer.concat(chunks).toString();
+                        console.error(`[INTER PDF ERROR] Status: ${res.statusCode} | ID: ${nossoNumero} | Response: ${errorBody}`);
+                        reject(new Error(`Erro Inter ${res.statusCode}: ${errorBody}`));
                     }
                 });
             });
-            req.on('error', (e) => reject(e));
+
+            req.setTimeout(15000, () => {
+                req.destroy();
+                reject(new Error('Timeout ao baixar PDF do Inter (15s)'));
+            });
+
+            req.on('error', (e) => {
+                console.error(`[INTER PDF REQ ERROR] ${e.message}`);
+                reject(e);
+            });
             req.end();
         });
     }
