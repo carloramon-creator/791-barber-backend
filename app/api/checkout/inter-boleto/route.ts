@@ -109,38 +109,8 @@ export async function POST(req: Request) {
         console.log('[INTER] Criando boleto...');
         let interRes = await inter.createBilling(payload);
 
-        // --- PULO DO GATO: Se o banco foi rápido, búscamos agora mesmo ---
-        if (interRes.codigoSolicitacao || interRes.pending_processing) {
-            console.log('[INTER] Aguardando 1.5s para busca imediata...');
-            await new Promise(r => setTimeout(r, 1500));
-
-            try {
-                const token = await inter.getAccessToken();
-                const now = new Date();
-                const dInit = new Date(now); dInit.setDate(dInit.getDate() - 1);
-                const dEnd = new Date(now); dEnd.setDate(dEnd.getDate() + 1);
-
-                const path = `/cobranca/v3/cobrancas?seuNumero=${seuNumero}&dataInicial=${dInit.toISOString().split('T')[0]}&dataFinal=${dEnd.toISOString().split('T')[0]}`;
-                const searchRes = await inter.makeRequest({
-                    hostname: 'cdpj.partners.bancointer.com.br',
-                    port: 443, path, method: 'GET',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    cert, key, rejectUnauthorized: false, family: 4
-                });
-
-                const items = searchRes.cobrancas || searchRes.content || [];
-                if (items.length > 0) {
-                    interRes = items[0]; // Substitui pela cobrança real com nossoNumero!
-                    console.log('[INTER] Cobrança encontrada na busca imediata!');
-                }
-            } catch (e) {
-                console.error('[INTER] Erro na busca imediata, seguindo para fluxo pendente.');
-            }
-        }
-
-        const isReady = interRes.nossoNumero && interRes.nossoNumero !== 'PENDING';
-
         // 4. Salvar registro local
+        console.log('[INTER] Salvando registro local...');
         await supabaseAdmin
             .from('finance')
             .insert({
@@ -161,22 +131,15 @@ export async function POST(req: Request) {
                 }
             });
 
-        if (isReady) {
-            return addCorsHeaders(req, NextResponse.json({
-                success: true,
-                nossoNumero: interRes.nossoNumero,
-                codigoBarras: interRes.codigoBarras,
-                linhaDigitavel: interRes.linhaDigitavel,
-                pdfUrl: `https://api.791barber.com/api/checkout/inter-boleto/pdf?nossoNumero=${interRes.nossoNumero}`
-            }));
-        }
-
+        // Retorna imediatamente com o que temos. O frontend consultará o status depois.
         return addCorsHeaders(req, NextResponse.json({
             success: true,
-            pending: true,
-            message: 'Boleto em processamento no banco.',
-            seu_numero: seuNumero,
-            amount: amount
+            pending: !isReady,
+            nossoNumero: interRes.nossoNumero,
+            codigoBarras: interRes.codigoBarras,
+            linhaDigitavel: interRes.linhaDigitavel,
+            amount: amount,
+            pdfUrl: interRes.nossoNumero ? `https://api.791barber.com/api/checkout/inter-boleto/pdf?nossoNumero=${interRes.nossoNumero}` : null
         }));
 
     } catch (error: any) {
