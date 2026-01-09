@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
-import { getCurrentUserAndTenant } from '@/app/lib/utils';
+import { getCurrentUserAndTenant, addCorsHeaders } from '@/app/lib/utils';
 
 export async function GET(req: Request) {
     try {
@@ -36,9 +36,15 @@ export async function GET(req: Request) {
             };
         }));
 
-        return NextResponse.json(tenantsWithStats);
+        const response = NextResponse.json(tenantsWithStats);
+        return addCorsHeaders(req, response);
     } catch (error: any) {
         console.error('[SYSTEM TENANTS GET] Error:', error.message);
-        return NextResponse.json({ error: error.message }, { status: 400 });
+        const response = NextResponse.json({ error: error.message }, { status: 400 });
+        return addCorsHeaders(req, response);
     }
+}
+
+export async function OPTIONS(req: Request) {
+    return addCorsHeaders(req, NextResponse.json({}, { status: 200 }));
 }
