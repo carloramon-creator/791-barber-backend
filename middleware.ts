@@ -2,39 +2,43 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/app/lib/middleware'
 
 export async function middleware(request: NextRequest) {
-    const response = await updateSession(request)
+    const origin = request.headers.get('origin');
 
     // Configuração de CORS para a API
     if (request.nextUrl.pathname.startsWith('/api')) {
-        const origin = request.headers.get('origin')
-
-        const isAllowed = origin && (
-            origin.endsWith('791barber.com') ||
-            origin.endsWith('vercel.app') ||
-            origin.startsWith('http://localhost')
-        );
-
-        if (isAllowed) {
-            response.headers.set('Access-Control-Allow-Origin', origin!);
-        } else {
-            // Fallback para o domínio oficial
-            response.headers.set('Access-Control-Allow-Origin', 'https://791barber.com');
-        }
-
-        response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
-        response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-info')
-        response.headers.set('Access-Control-Allow-Credentials', 'true')
-
-        // Tratar requisições OPTIONS (preflight)
+        // Tratar requisições OPTIONS (preflight) imediatamente
         if (request.method === 'OPTIONS') {
-            return new NextResponse(null, {
-                status: 204,
-                headers: response.headers
-            })
+            const preflightResponse = new NextResponse(null, { status: 204 });
+
+            if (origin) {
+                preflightResponse.headers.set('Access-Control-Allow-Origin', origin);
+            } else {
+                preflightResponse.headers.set('Access-Control-Allow-Origin', '*');
+            }
+
+            preflightResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+            preflightResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-info, x-tenant-id');
+            preflightResponse.headers.set('Access-Control-Allow-Credentials', 'true');
+
+            return preflightResponse;
         }
     }
 
-    return response
+    const response = await updateSession(request);
+
+    // Adicionar headers de CORS no response normal
+    if (request.nextUrl.pathname.startsWith('/api')) {
+        if (origin) {
+            response.headers.set('Access-Control-Allow-Origin', origin);
+        } else {
+            response.headers.set('Access-Control-Allow-Origin', '*');
+        }
+        response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+        response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-info, x-tenant-id');
+        response.headers.set('Access-Control-Allow-Credentials', 'true');
+    }
+
+    return response;
 }
 
 export const config = {
