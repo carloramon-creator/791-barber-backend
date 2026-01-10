@@ -10,14 +10,10 @@ export async function middleware(request: NextRequest) {
         if (request.method === 'OPTIONS') {
             const preflightResponse = new NextResponse(null, { status: 204 });
 
-            if (origin) {
-                preflightResponse.headers.set('Access-Control-Allow-Origin', origin);
-            } else {
-                preflightResponse.headers.set('Access-Control-Allow-Origin', '*');
-            }
+            preflightResponse.headers.set('Access-Control-Allow-Origin', origin || '*');
 
             preflightResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-            preflightResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-info, x-tenant-id');
+            preflightResponse.headers.set('Access-Control-Allow-Headers', '*');
             preflightResponse.headers.set('Access-Control-Allow-Credentials', 'true');
 
             return preflightResponse;
@@ -28,13 +24,9 @@ export async function middleware(request: NextRequest) {
 
     // Adicionar headers de CORS no response normal
     if (request.nextUrl.pathname.startsWith('/api')) {
-        if (origin) {
-            response.headers.set('Access-Control-Allow-Origin', origin);
-        } else {
-            response.headers.set('Access-Control-Allow-Origin', '*');
-        }
+        response.headers.set('Access-Control-Allow-Origin', origin || '*');
         response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-        response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-info, x-tenant-id');
+        response.headers.set('Access-Control-Allow-Headers', '*');
         response.headers.set('Access-Control-Allow-Credentials', 'true');
     }
 
