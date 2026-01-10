@@ -180,6 +180,37 @@ export async function getDynamicBarberAverages(tenantId: string): Promise<Record
     }
 }
 
+export async function resolveTenantId(idOrSlug: string): Promise<string | null> {
+    if (!idOrSlug) return null;
+
+    // UUID Regex check
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrSlug);
+
+    if (isUuid) {
+        return idOrSlug;
+    }
+
+    // Lookup by slug
+    const { data, error } = await supabaseAdmin
+        .from('tenants')
+        .select('id')
+        .eq('slug', idOrSlug)
+        .maybeSingle();
+
+    if (error || !data) {
+        // One last try: lookup by name (lowercase and replaced spaces with dashes)
+        const { data: dataByName } = await supabaseAdmin
+            .from('tenants')
+            .select('id')
+            .ilike('name', idOrSlug.replace(/-/g, ' '))
+            .maybeSingle();
+
+        return dataByName?.id || null;
+    }
+
+    return data.id;
+}
+
 export function getStatusColor(status: string) {
     switch (status) {
         case 'waiting': return 'yellow';

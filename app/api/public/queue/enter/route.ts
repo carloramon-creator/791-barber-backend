@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
 import { findOrCreateClientByPhone } from '@/app/lib/clients';
+import { resolveTenantId } from '@/app/lib/utils';
 
 /**
  * Endpoint PÚBLICO para cliente entrar na fila de um barbeiro específico.
@@ -20,6 +21,10 @@ export async function POST(req: Request) {
 
         // Determinar tenant_id
         let finalTenantId = tenant_id;
+        if (finalTenantId) {
+            finalTenantId = await resolveTenantId(finalTenantId);
+        }
+
         if (!finalTenantId) {
             // Fallback para dev: pegar primeiro tenant
             const { data: firstTenant } = await supabaseAdmin

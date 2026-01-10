@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/app/lib/supabase';
-import { getStatusColor, getDynamicBarberAverages } from '@/app/lib/utils';
+import { getStatusColor, getDynamicBarberAverages, resolveTenantId } from '@/app/lib/utils';
 
 /**
  * Endpoint PÚBLICO para clientes verem as filas da barbearia.
@@ -12,7 +12,12 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url);
         let tenantId = searchParams.get('tenant_id');
 
-        // Se não vier tenant_id, buscar o primeiro tenant disponível (para demo/dev)
+        // Se Vier um slug ou ID, resolvemos para o ID real
+        if (tenantId) {
+            tenantId = await resolveTenantId(tenantId);
+        }
+
+        // Se não vier tenant_id ou não resolveu, buscar o primeiro tenant disponível (para demo/dev)
         if (!tenantId) {
             const { data: firstTenant } = await supabaseAdmin
                 .from('tenants')

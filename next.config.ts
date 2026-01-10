@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/cliente/:path*',
-        destination: `https://frontend-client-carloramon-creators-projects.vercel.app/:path*`, // Substitua pela URL real do Vercel
+        destination: `https://frontend-client-six-orpin.vercel.app/:path*`, // URL do Vercel no screenshot
       },
     ];
   },
