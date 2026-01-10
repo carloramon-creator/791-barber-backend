@@ -29,22 +29,31 @@ export async function GET(req: Request) {
         if (charge.metadata?.method === 'pix_inter' && charge.metadata?.pix_payload) isReady = true;
 
         if (!isReady) {
-            const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
-            const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
+            // 1. Configurar Inter - Buscar do DB primeiro
+            const { data: settingsData } = await supabaseAdmin
+                .from('system_settings')
+                .select('value')
+                .eq('key', 'inter_config')
+                .single();
 
-            if (process.env.INTER_CLIENT_ID && cert && key) {
+            const dbConfig = settingsData?.value;
+            const clientId = dbConfig?.client_id || process.env.INTER_CLIENT_ID;
+            const certRaw = dbConfig?.crt || process.env.INTER_CERT_CONTENT || '';
+            const keyRaw = dbConfig?.key || process.env.INTER_KEY_CONTENT || '';
+            const cert = certRaw.replace(/\\n/g, '\n');
+            const key = keyRaw.replace(/\\n/g, '\n');
+
+            if (clientId && cert && key) {
                 const inter = new InterAPIV3({
-                    clientId: process.env.INTER_CLIENT_ID,
-                    clientSecret: process.env.INTER_CLIENT_SECRET || '',
+                    clientId,
+                    clientSecret: dbConfig?.client_secret || process.env.INTER_CLIENT_SECRET || '',
                     cert, key
                 });
 
                 try {
-                    const now = new Date();
-                    const dInit = new Date(now); dInit.setDate(dInit.getDate() - 1);
-                    const dEnd = new Date(now); dEnd.setDate(dEnd.getDate() + 1);
-
-                    const response = await inter.listBillings(dInit.toISOString().split('T')[0], dEnd.toISOString().split('T')[0]);
+                    const today = new Date().toISOString().split('T')[0];
+                    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                    const response = await inter.listBillings(yesterday, today);
                     const items = response.cobrancas || response.content || [];
 
                     const found = items.find((it: any) => it.seuNumero === seuNumero);
@@ -62,7 +71,7 @@ export async function GET(req: Request) {
                         isReady = true;
                     }
                 } catch (e) {
-                    console.error('[POLLING ERROR]', e);
+                    console.error('[POLLING INTER ERROR]', e);
                 }
             }
         }
@@ -77,11 +86,13 @@ export async function GET(req: Request) {
                 payload: isPix ? {
                     pixPayload: charge.metadata.pix_payload,
                     amount: charge.value,
-                    expiresAt: charge.metadata.expires_at || new Date().toISOString()
+                    expiresAt: charge.metadata.expires_at || new Date().toISOString(),
+                    pdfUrl
                 } : {
                     nossoNumero: charge.metadata.nosso_numero,
                     codigoBarras: charge.metadata.codigo_barras,
                     linhaDigitavel: charge.metadata.linha_digitavel,
+                    amount: charge.value,
                     pdfUrl
                 }
             }));

@@ -37,7 +37,12 @@ export async function GET(req: Request) {
             .eq('id', ticketId)
             .single();
 
-        if (ticketError || !ticket) {
+        if (ticketError) {
+            console.error('[DATABASE ERROR]', ticketError);
+            return NextResponse.json({ error: 'Erro ao buscar ticket no banco de dados' }, { status: 500 });
+        }
+
+        if (!ticket) {
             return NextResponse.json({ error: 'Ticket não encontrado' }, { status: 404 });
         }
 

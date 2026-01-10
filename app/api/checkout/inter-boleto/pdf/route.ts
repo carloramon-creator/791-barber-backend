@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { InterAPIV3 } from '@/app/lib/inter-api-v3';
+import { supabaseAdmin } from '@/app/lib/supabase';
 
 export async function GET(req: Request) {
     try {
@@ -14,19 +15,28 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: 'Identificador (nossoNumero ou codigoSolicitacao) não informado' }, { status: 400 });
         }
 
-        // Configuração V3
-        const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
-        const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
+        // 1. Configurar Inter - Buscar do DB primeiro
+        const { data: settingsData } = await supabaseAdmin
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'inter_config')
+            .single();
 
-        if (!process.env.INTER_CLIENT_ID || !cert || !key) {
+        const dbConfig = settingsData?.value;
+        const clientId = dbConfig?.client_id || process.env.INTER_CLIENT_ID;
+        const certRaw = dbConfig?.crt || process.env.INTER_CERT_CONTENT || '';
+        const keyRaw = dbConfig?.key || process.env.INTER_KEY_CONTENT || '';
+        const cert = certRaw.replace(/\\n/g, '\n');
+        const key = keyRaw.replace(/\\n/g, '\n');
+
+        if (!clientId || !cert || !key) {
             return NextResponse.json({ error: 'Configuração do Inter incompleta no servidor' }, { status: 500 });
         }
 
         const inter = new InterAPIV3({
-            clientId: process.env.INTER_CLIENT_ID,
-            clientSecret: process.env.INTER_CLIENT_SECRET || '',
-            cert: cert,
-            key: key
+            clientId,
+            clientSecret: dbConfig?.client_secret || process.env.INTER_CLIENT_SECRET || '',
+            cert, key
         });
 
         // Tenta primeiro pelo Solicitação ID (UUID) se existir, depois pelo Nosso Número

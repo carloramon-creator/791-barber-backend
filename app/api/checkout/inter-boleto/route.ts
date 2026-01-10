@@ -147,6 +147,8 @@ export async function POST(req: Request) {
             });
 
         // Retorna imediatamente com o que temos. O frontend consultará o status depois.
+        const pdfUrl = nossoNumero ? `/api/checkout/inter-boleto/pdf?nossoNumero=${nossoNumero}&codigoSolicitacao=${interRes.codigoSolicitacao || ''}` : null;
+
         return addCorsHeaders(req, NextResponse.json({
             success: true,
             pending: !isReady,
@@ -154,7 +156,7 @@ export async function POST(req: Request) {
             codigoBarras: interRes.codigoBarras,
             linhaDigitavel: interRes.linhaDigitavel,
             amount: amount,
-            pdfUrl: nossoNumero ? `https://api.791barber.com/api/checkout/inter-boleto/pdf?nossoNumero=${nossoNumero}` : null
+            pdfUrl
         }));
 
     } catch (error: any) {

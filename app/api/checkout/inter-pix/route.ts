@@ -82,19 +82,29 @@ export async function POST(req: Request) {
             }, { status: 400 }));
         }
 
-        // 3. Integrar com Inter (V3)
-        const cert = (process.env.INTER_CERT_CONTENT || '').replace(/\\n/g, '\n');
-        const key = (process.env.INTER_KEY_CONTENT || '').replace(/\\n/g, '\n');
+        // 3. Integrar com Inter (V3) - Buscar do DB primeiro
+        const { data: settingsData } = await supabaseAdmin
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'inter_config')
+            .single();
 
-        if (!process.env.INTER_CLIENT_ID || !cert || !key) {
+        const dbConfig = settingsData?.value;
+        const clientId = dbConfig?.client_id || process.env.INTER_CLIENT_ID;
+        const certRaw = dbConfig?.crt || process.env.INTER_CERT_CONTENT || '';
+        const keyRaw = dbConfig?.key || process.env.INTER_KEY_CONTENT || '';
+
+        const cert = certRaw.replace(/\\n/g, '\n');
+        const key = keyRaw.replace(/\\n/g, '\n');
+
+        if (!clientId || !cert || !key) {
             return addCorsHeaders(req, NextResponse.json({ error: 'Configuração do Inter incompleta no servidor' }, { status: 500 }));
         }
 
         const inter = new InterAPIV3({
-            clientId: process.env.INTER_CLIENT_ID,
-            clientSecret: process.env.INTER_CLIENT_SECRET || '',
-            cert: cert,
-            key: key
+            clientId,
+            clientSecret: dbConfig?.client_secret || process.env.INTER_CLIENT_SECRET || '',
+            cert, key
         });
 
         const payload = {
@@ -119,43 +129,65 @@ export async function POST(req: Request) {
             }
         };
 
-        console.log('[SAAS PIX] Criando cobrança Pix no Inter...');
-        const interBoleto = await inter.createBilling(payload);
+        const interResRaw = await inter.createBilling(payload);
+        let interRes = interResRaw;
+        let codigoSolicitacao = interRes.codigoSolicitacao;
+        let pixCopiaECola = interRes.pixCopiaECola || interRes.pix?.pixCopiaECola;
+        const seuNumero = payload.seuNumero;
 
-        // Check for pending processing
-        if (interBoleto.pending_processing || interBoleto.codigoSolicitacao) {
-            // Salvar como pendente
-            await supabaseAdmin
-                .from('finance')
-                .insert({
-                    tenant_id: null,
-                    type: 'revenue',
-                    value: amount,
-                    description: `Pix SaaS Pendente (Processando) - Plano ${plan} (${tenant.name})`,
-                    date: currentDate,
-                    is_paid: false,
-                    metadata: {
-                        nosso_numero: 'PENDING',
-                        txid: interBoleto.codigoSolicitacao || 'N/A',
-                        seu_numero: payload.seuNumero,
-                        tenant_id: tenant.id,
-                        method: 'pix_inter'
+        console.log('[SAAS PIX] Resposta inicial:', { codigoSolicitacao, hasPix: !!pixCopiaECola });
+
+        // Se for assíncrono ou vier sem o pixCopiaECola, iniciamos busca
+        let isReady = !!pixCopiaECola;
+
+        if (!isReady && codigoSolicitacao) {
+            console.log(`[SAAS PIX] Cobrança assíncrona. Iniciando busca (Ticket: ${codigoSolicitacao})...`);
+            const maxRetries = 5;
+            const delays = [3000, 3000, 4000, 5000, 5000];
+
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                console.log(`[SAAS PIX] Tentativa ${attempt + 1}/${maxRetries} - Aguardando ${delays[attempt]}ms...`);
+                await new Promise(r => setTimeout(r, delays[attempt]));
+
+                try {
+                    let found: any = null;
+
+                    // Estratégia A: Consulta por Solicitação
+                    try {
+                        const solRes = await inter.getBillingBySolicitacao(codigoSolicitacao);
+                        const possiblePix = solRes.pix;
+                        if (possiblePix?.pixCopiaECola) {
+                            found = { ...solRes.cobranca, pixCopiaECola: possiblePix.pixCopiaECola };
+                        }
+                    } catch (e: any) {
+                        console.log('[SAAS PIX] Estratégia A falhou, pulando para B.');
                     }
-                });
 
-            return addCorsHeaders(req, NextResponse.json({
-                success: true,
-                pending: true,
-                message: interBoleto.message,
-                seu_numero: payload.seuNumero,
-                amount: amount
-            }));
-        }
+                    // Estratégia B: Busca na Lista (+/- 1 dia)
+                    if (!found) {
+                        const now = new Date();
+                        const dInit = new Date(now); dInit.setDate(dInit.getDate() - 1);
+                        const dEnd = new Date(now); dEnd.setDate(dEnd.getDate() + 1);
 
-        const pixCopiaECola = interBoleto.pixCopiaECola || interBoleto.pix?.pixCopiaECola;
+                        const listRes = await inter.listBillings(
+                            dInit.toISOString().split('T')[0],
+                            dEnd.toISOString().split('T')[0]
+                        );
+                        const items = listRes.cobrancas || listRes.content || [];
+                        found = items.find((it: any) => it.seuNumero === seuNumero);
+                    }
 
-        if (!pixCopiaECola) {
-            throw new Error(`DEBUG PIX: ${JSON.stringify(interBoleto).substring(0, 200)}...`);
+                    if (found && (found.pixCopiaECola || found.pix?.pixCopiaECola)) {
+                        interRes = found;
+                        pixCopiaECola = found.pixCopiaECola || found.pix?.pixCopiaECola;
+                        isReady = true;
+                        console.log('[SAAS PIX] ✅ Pix localizado!');
+                        break;
+                    }
+                } catch (e: any) {
+                    console.error(`[SAAS PIX] Erro tentativa ${attempt + 1}:`, e.message);
+                }
+            }
         }
 
         // 5. Salvar registro local
@@ -165,23 +197,35 @@ export async function POST(req: Request) {
                 tenant_id: null,
                 type: 'revenue',
                 value: amount,
-                description: `Pix SaaS Pendente - Plano ${plan} (${tenant.name})`,
+                description: `SaaS - Plano ${plan} (${tenant.name})`,
                 date: currentDate,
                 is_paid: false,
                 metadata: {
-                    nosso_numero: interBoleto.nossoNumber || interBoleto.nossoNumero,
-                    txid: interBoleto.codigoSolicitacao || interBoleto.txid || 'N/A',
-                    seu_numero: payload.seuNumero,
+                    txid: codigoSolicitacao || 'N/A',
+                    seu_numero: seuNumero,
                     tenant_id: tenant.id,
-                    method: 'pix_inter'
+                    method: 'pix_inter',
+                    pix_payload: pixCopiaECola
                 }
             });
 
+        if (isReady) {
+            const identifier = interRes.nossoNumero || interRes.identificador || codigoSolicitacao;
+            return addCorsHeaders(req, NextResponse.json({
+                success: true,
+                pixPayload: pixCopiaECola,
+                amount: amount,
+                expiresAt: dueDateStr,
+                pdfUrl: `/api/checkout/inter-boleto/pdf?nossoNumero=${identifier}&codigoSolicitacao=${codigoSolicitacao || ''}`
+            }));
+        }
+
         return addCorsHeaders(req, NextResponse.json({
             success: true,
-            pixPayload: pixCopiaECola,
-            amount: amount,
-            expiresAt: dueDateStr
+            pending: true,
+            message: 'O Pix está sendo processado pelo banco.',
+            seu_numero: seuNumero,
+            amount: amount
         }));
 
     } catch (error: any) {
